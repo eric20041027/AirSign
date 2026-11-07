@@ -29,11 +29,12 @@ Then we found that AirPods stream motion data to macOS 50 times a second, even w
 
 Checks on every unlock:
 
-- **Gate 1 (hard):** the same AirPods (by audio device UID) and the same bud as enrollment. Anything else is rejected before scoring.
+- **Gate 1 (hard):** the same AirPods (by audio device UID) and the same bud as enrollment. AirPods belong to one person, while computers often get shared, so someone who tries with their own AirPods is turned away before any scoring. It's a deterrent check, not a secret: the Bluetooth ID can be read by anyone nearby, so it's never used as an encryption key.
 - **Score:** one DTW distance over grip angle (gravity direction), size and tempo (acceleration plus duration), and wrist rhythm (gyroscope), compared with your 3 enrolled signatures.
 - **Gate lights:** in demo mode, the screen draws your signature and lights the gate that differed most, so you can see why an attempt failed.
 - **Lockout:** 5 failures in a row lock unlocking for 5 minutes. Wrong recovery codes count too.
-- **Recovery code:** lost your AirPods? The code opens any `.airsign` file on any Mac with AirSign. It's never stored on the Mac.
+- **Recovery code:** lost your AirPods? The code opens any `.airsign` file on any Mac with AirSign. The code itself is never stored.
+- **Pairing your other Mac:** open a file from your other Mac once with the recovery code and tick **Remember on this Mac**. From then on, your AirPods and signature on this Mac open files locked on the other one. Only a Mac with its own enrolled signature can pair; on a public Mac you just use the code once and nothing is saved. A fresh enrollment forgets all pairings.
 
 Nothing is uploaded. AirSign makes no network connections.
 
@@ -41,8 +42,10 @@ Nothing is uploaded. AirSign makes no network connections.
 
 - **Native macOS app** in Swift and SwiftUI. Motion comes from `CMHeadphoneMotionManager`, and the AirPods' identity from the CoreAudio output device UID. Finder integration uses macOS Services.
 - **Crypto with CryptoKit:**
-  - Each file gets its own random 256-bit key and is encrypted with AES-GCM. The file header is authenticated too.
-  - That file key is wrapped twice. Once with a master key kept in the macOS Keychain (this-device-only), released only after a signature passes. Once with HPKE (Curve25519, ChaCha20-Poly1305) to a public key derived from the recovery code, so the code works on any Mac.
+  - Each file gets its own random 256-bit key, and its content is encrypted with AES-GCM.
+  - The `.airsign` file starts with a readable JSON header: the original name, when it was locked, and the wrapped keys. The header is authenticated together with the ciphertext, so editing it breaks the file.
+  - The file key is wrapped twice. Once with a master key kept in this Mac's login Keychain, which doesn't sync to other devices, released only after a signature passes. Once with HPKE (Curve25519, ChaCha20-Poly1305) to a public key derived from the recovery code, so the code works on any Mac.
+  - Pairing stores the key derived from the recovery code (never the code itself) in the second Mac's Keychain, used only after that Mac's AirPods and signature check passes. A fresh enrollment makes a new master key and clears every pairing.
   - Enrolled signatures are stored encrypted on the Mac.
 - **Matcher:**
   - Each sample becomes a 9-number feature: gyro ÷ 3 rad/s, acceleration ÷ 0.5 g, gravity direction.
@@ -63,7 +66,7 @@ Nothing is uploaded. AirSign makes no network connections.
 
 ## Accomplishments that we're proud of
 
-- A full lock → unlock → recover loop from the Finder right-click menu.
+- A full lock → unlock → recover loop from the Finder right-click menu, plus pairing so your own second Mac opens your files with your signature.
 - Honest numbers from 2 rounds of real attempts. Imitators watched the owner sign before trying, and only same-bud attempts count:
 
 | Round | Owner accepted | Imitators accepted | AUC |
@@ -86,6 +89,9 @@ Nothing is uploaded. AirSign makes no network connections.
 | Attacker | Stopped? | Why |
 |---|---|---|
 | Copies or emails your `.airsign` file | Yes | The master key never leaves your Mac's Keychain |
+| Gets a file from another Mac you paired | Yes | The paired key sits in that Mac's Keychain and is used only after its AirPods and signature check; the recovery code isn't stored. Pair only on your own user account; on public Macs, type the code once |
+| Deletes your settings and re-enrolls to reuse your pairings | Yes | A fresh enrollment makes a new master key and clears every pairing |
+| Tries at your Mac with their own AirPods | Yes, at gate 1 | Turned away before scoring. A deterrent only: the Bluetooth ID is readable nearby, so it's never a key |
 | Uses your logged-in Mac while you're away | Yes | Needs your AirPods, grip and rhythm; 5 failures lock for 5 minutes |
 | Steals your AirPods | Yes | Still needs your grip and rhythm |
 | Watches you sign, then imitates | Partly | 1 of 14 skilled attempts got through in round 2, even at the strictest setting we tried |
@@ -101,6 +107,7 @@ Limits we want to be upfront about:
 - **macOS only.** The AirPods motion API exists only on Apple platforms.
 - **The signature gates the key; it isn't the key.** Someone with your login password and the skills to read your Keychain could skip the signature.
 - **The original stays in the Trash** until you empty it. We chose that over deleting it so a bug can never cost you a file.
+- **Gate 1 is a deterrent, not a secret.** An attacker who reads your AirPods' Bluetooth ID nearby learns nothing that unlocks a file; the signature check still has to pass.
 
 ## What's next
 
