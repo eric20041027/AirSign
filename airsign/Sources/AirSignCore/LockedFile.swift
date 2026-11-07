@@ -60,7 +60,12 @@ public enum LockedFile {
     }
 
     public static func open(_ data: Data, recoveryCode: String) throws -> (name: String, plaintext: Data) {
-        let privateKey = try RecoveryCode.privateKey(for: recoveryCode)
+        try open(data, recoveryPrivateKey: RecoveryCode.privateKey(for: recoveryCode))
+    }
+
+    /// Opens with the key a recovery code derives, as kept by a Mac paired with the locking Mac.
+    public static func open(_ data: Data, recoveryPrivateKey privateKey: Curve25519.KeyAgreement.PrivateKey) throws
+        -> (name: String, plaintext: Data) {
         let parsed = try parse(data)
         let keyBytes = try authenticated {
             var recipient = try HPKE.Recipient(privateKey: privateKey, ciphersuite: suite, info: hpkeInfo,

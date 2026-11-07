@@ -54,6 +54,27 @@ import Testing
     #expect(try store.load()?.enrollment == e)
 }
 
+@Test func pairedKeysPersistWithoutDuplicatesAndAFreshProfileForgetsThem() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let store = ProfileStore(directory: dir, secrets: InMemorySecretStore())
+    #expect(try store.pairedRecoveryKeys().isEmpty)
+    let first = try RecoveryCode.privateKey(for: RecoveryCode.generate())
+    let second = try RecoveryCode.privateKey(for: RecoveryCode.generate())
+    #expect(try store.addPairedRecoveryKey(first) == true)
+    #expect(try store.addPairedRecoveryKey(first) == false)
+    #expect(try store.addPairedRecoveryKey(second) == true)
+    #expect(try store.pairedRecoveryKeys().map(\.rawRepresentation) == [first.rawRepresentation, second.rawRepresentation])
+
+    // Deleting profile.bin and enrolling someone else must not inherit access to the paired Macs' files.
+    let e = try enroll((0..<3).map { _ in Signature(samples: strokes(ownerShape, noise: 0.2)) }, deviceUID: "UID-C")
+    try store.createProfile(Profile(enrollment: e, recoveryPublicKey: Data(repeating: 2, count: 32), lockout: Lockout(), demoMode: false))
+    #expect(try store.pairedRecoveryKeys().isEmpty)
+
+    try store.addPairedRecoveryKey(first)
+    try store.forgetPairedMacs()
+    #expect(try store.pairedRecoveryKeys().isEmpty)
+}
+
 @Test func profileRoundTripsAndIsNotPlaintextOnDisk() throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let store = ProfileStore(directory: dir, secrets: InMemorySecretStore())

@@ -24,6 +24,16 @@ import Testing
     #expect(try LockedFile.header(of: sealed).originalName == "tax-return.pdf")
 }
 
+@Test func aPairedRecoveryKeyOpensLikeTheCode() throws {
+    let master = SymmetricKey(size: .bits256), code = RecoveryCode.generate()
+    let key = try RecoveryCode.privateKey(for: code)
+    let sealed = try LockedFile.seal(Data("desk".utf8), originalName: "plan.txt", masterKey: master, recoveryPublicKey: key.publicKey)
+    let opened = try LockedFile.open(sealed, recoveryPrivateKey: key)
+    #expect(opened.name == "plan.txt" && opened.plaintext == Data("desk".utf8))
+    let stranger = try RecoveryCode.privateKey(for: RecoveryCode.generate())
+    #expect(throws: LockedFileError.authenticationFailed) { try LockedFile.open(sealed, recoveryPrivateKey: stranger) }
+}
+
 @Test func wrongKeysAndTamperingFail() throws {
     let master = SymmetricKey(size: .bits256), code = RecoveryCode.generate()
     let sealed = try LockedFile.seal(Data("x".utf8), originalName: "a.txt", masterKey: master,
