@@ -7,11 +7,12 @@ enum Tone {
     case neutral, good, warn, bad
 }
 
-/// Drives every flow: enroll, lock, unlock by signature or recovery code, and changing the signature.
+/// Drives every flow: enroll, lock, unlock by signature or recovery code, changing the signature,
+/// and (only when launched with `--test-mode`) the test lab.
 @MainActor
 final class AppModel: ObservableObject {
     enum Screen: Equatable {
-        case enroll, home, unlock, confirmIdentity
+        case enroll, home, unlock, confirmIdentity, lab
     }
 
     @Published private(set) var profile: Profile?
@@ -31,13 +32,30 @@ final class AppModel: ObservableObject {
     @Published private(set) var saveBlocked = false
     @Published var thresholdOverride: Double?
 
+    /// `open -a AirSign --args --test-mode` adds the test lab. Lab attempts open no files, so they
+    /// never count toward the lockout; every other flow keeps it.
+    let testMode = CommandLine.arguments.contains("--test-mode")
+    @Published var testOwner = "Eric"
+    @Published var testTester = ""
+    @Published var testSession = TestSession.tonight
+    @Published var testScenario = TestScenario.owner
+    @Published private(set) var labCounts: [String: Int] = [:]
+
     private let store = ProfileStore(directory: ProfileStore.defaultDirectory, secrets: KeychainSecretStore())
+    private let attemptLog = AttemptLog(directory: AttemptLog.defaultDirectory)
     private let motion = HeadphoneMotionSource()
     private var recorder = SignatureRecorder()
     private var signingSamples: [MotionSample] = []
+    private var enrolledRows: [[MotionSample]] = []
     /// A first enrollment waits here until the user confirms the recovery code, so quitting early saves nothing.
     private var pendingProfile: Profile?
+    private var identityPurpose = IdentityPurpose.changeSignature
+    private var returnToLabAfterEnroll = false
     private var timer: Timer?
+
+    private enum IdentityPurpose {
+        case changeSignature, openLab
+    }
 
     var demoMode: Bool { profile?.demoMode ?? true }
 
@@ -110,16 +128,21 @@ final class AppModel: ObservableObject {
             say("Cancelled.", .neutral)
             return
         }
-        if screen != .enroll, let remaining = profile?.lockout.remaining(now: Date()) {
+        let countsTowardLockout = screen == .unlock || screen == .confirmIdentity
+        if countsTowardLockout, let remaining = profile?.lockout.remaining(now: Date()) {
             say("Too many tries. Wait \(Int(remaining.rounded(.up))) s.", .bad)
             return
         }
-        if screen != .enroll, saveBlocked {
+        if countsTowardLockout, saveBlocked {
             say("AirSign can't save its settings, so unlocking is paused. Check the AirSign folder in Application Support.", .bad)
             return
         }
         if screen == .enroll, AudioDeviceIdentity.headphoneUID() == nil {
             say("Set the sound output to your AirPods (Control Center → Sound), then enroll.", .bad)
+            return
+        }
+        if screen == .lab, testTester.trimmingCharacters(in: .whitespaces).isEmpty {
+            say("Type the tester's name first.", .warn)
             return
         }
         guard case .streaming = motionStatus else {
@@ -153,7 +176,7 @@ final class AppModel: ObservableObject {
             stopCapture()
             let signature = Signature(samples: rows)
             livePath = signature.path
-            complete(signature)
+            complete(signature, rows: rows)
         case .aborted(let reason):
             stopCapture()
             say(Self.describe(reason), .warn)
@@ -175,23 +198,25 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func complete(_ signature: Signature) {
+    private func complete(_ signature: Signature, rows: [MotionSample]) {
         switch screen {
-        case .enroll: addEnrollment(signature)
+        case .enroll: addEnrollment(signature, rows: rows)
         case .unlock: verifyAndUnlock(signature)
         case .confirmIdentity: confirmIdentity(signature)
+        case .lab: labVerify(signature, rows: rows)
         case .home: break
         }
     }
 
     // MARK: - Enrollment
 
-    private func addEnrollment(_ signature: Signature) {
+    private func addEnrollment(_ signature: Signature, rows: [MotionSample]) {
         if let first = enrolledSoFar.first, first.side != signature.side {
             say("Use the same AirPod as your first signature (\(first.side.rawValue)).", .warn)
             return
         }
         enrolledSoFar.append(signature)
+        enrolledRows.append(rows)
         guard enrolledSoFar.count >= MatcherConfig.enrollCount else {
             say("Got \(enrolledSoFar.count) of \(MatcherConfig.enrollCount). Sign again the same way.", .good)
             return
@@ -202,6 +227,7 @@ final class AppModel: ObservableObject {
     private func finishEnrollment() {
         guard let deviceUID = AudioDeviceIdentity.headphoneUID() else {
             enrolledSoFar.removeLast()
+            enrolledRows.removeLast()
             say("Set the sound output to your AirPods (Control Center → Sound), then sign once more.", .bad)
             return
         }
@@ -211,9 +237,11 @@ final class AppModel: ObservableObject {
                 updated.enrollment = enrollment
                 updated.lockout.recordSuccess()
                 try save(updated)
+                logEnrollment(enrollment)
                 isReenrolling = false
-                enrolledSoFar = []
-                screen = .home
+                clearEnrollment()
+                screen = returnToLabAfterEnroll ? .lab : .home
+                returnToLabAfterEnroll = false
                 say("New signature saved. Your locked files open with it.", .good)
                 return
             }
@@ -223,41 +251,45 @@ final class AppModel: ObservableObject {
             recoveryCodeToShow = code
             say("Write down your recovery code. Your signature is saved when you confirm.", .good)
         } catch {
-            enrolledSoFar = []
+            clearEnrollment()
             say("Could not save the signature: \(error.localizedDescription). Start again.", .bad)
         }
     }
 
     func confirmRecoveryCodeWritten() {
         guard let pending = pendingProfile else { return }
+        recoveryCodeToShow = nil
+        pendingProfile = nil
         do {
             try store.createProfile(pending)
             profile = pending
-            pendingProfile = nil
         } catch {
-            recoveryCodeToShow = nil
-            pendingProfile = nil
-            enrolledSoFar = []
+            clearEnrollment()
             say("Could not save the signature: \(error.localizedDescription). Enroll again.", .bad)
             return
         }
-        recoveryCodeToShow = nil
-        enrolledSoFar = []
+        logEnrollment(pending.enrollment)
+        clearEnrollment()
         screen = pendingUnlock.isEmpty ? .home : .unlock
         say(pendingUnlock.isEmpty ? "Right-click any file in Finder → Lock with AirSign." : "Now sign to unlock.", .neutral)
     }
 
     func restartEnrollment() {
         stopCapture()
-        enrolledSoFar = []
+        clearEnrollment()
         livePath = []
         say("Start over: sign 3 times the same way.", .neutral)
+    }
+
+    private func clearEnrollment() {
+        enrolledSoFar = []
+        enrolledRows = []
     }
 
     // MARK: - Unlock
 
     private func verifyAndUnlock(_ signature: Signature) {
-        guard var current = profile else {
+        guard let current = profile else {
             say("This Mac has no AirSign signature. Use the recovery code.", .warn)
             return
         }
@@ -269,13 +301,11 @@ final class AppModel: ObservableObject {
             return
         }
         guard verdict.accepted else {
-            current.lockout.recordFailure(now: Date())
-            persist(current)
+            adjustLockout(.failure)
             say(current.demoMode ? Self.describe(verdict) : "Not recognized.", .bad)
             return
         }
-        current.lockout.recordSuccess()
-        persist(current)
+        adjustLockout(.success)
         let heading = current.demoMode ? Self.describe(verdict) : "Recognized."
         do {
             let master = try store.masterKey()
@@ -297,26 +327,23 @@ final class AppModel: ObservableObject {
             return
         }
         guard (try? RecoveryCode.normalize(code)) != nil else {
-            registerFailure()
+            adjustLockout(.failure)
             say("That is not a valid recovery code (32 characters).", .bad)
             return
         }
         if screen == .confirmIdentity {
             let key = try? RecoveryCode.privateKey(for: code).publicKey.rawRepresentation
             guard let key, key == profile?.recoveryPublicKey else {
-                registerFailure()
+                adjustLockout(.failure)
                 say("Wrong recovery code.", .bad)
                 return
             }
-            startReenrollment()
+            adjustLockout(.success)
+            identityConfirmed()
             return
         }
         let outcome = unlockPending { try LockedFile.open($0, recoveryCode: code) }
-        if var current = profile {
-            current.lockout.apply(Lockout.recoveryEffect(restored: outcome.restored.count, wrongKey: outcome.wrongKey.count),
-                                  now: Date())
-            persist(current)
-        }
+        adjustLockout(Lockout.recoveryEffect(restored: outcome.restored.count, wrongKey: outcome.wrongKey.count))
         let wrong = outcome.wrongKey.map { "\($0.lastPathComponent): wrong recovery code." }
         report(heading: "Recovery code", outcome: outcome, extra: wrong)
     }
@@ -324,7 +351,8 @@ final class AppModel: ObservableObject {
     func cancelToHome() {
         stopCapture()
         isReenrolling = false
-        enrolledSoFar = []
+        returnToLabAfterEnroll = false
+        clearEnrollment()
         pendingUnlock = []
         lastVerdict = nil
         livePath = []
@@ -361,41 +389,119 @@ final class AppModel: ObservableObject {
         if allDone { screen = profile == nil ? .enroll : .home }
     }
 
-    // MARK: - Changing the signature
+    // MARK: - Proving identity (change signature, open the test lab)
 
     func beginChangeSignature() {
+        beginIdentityCheck(.changeSignature, prompt: "First prove it's you: sign with your current signature, or use the recovery code.")
+    }
+
+    func beginLab() {
+        guard testMode else { return }
+        beginIdentityCheck(.openLab, prompt: "The owner opens the test lab: sign once, or use the recovery code.")
+    }
+
+    private func beginIdentityCheck(_ purpose: IdentityPurpose, prompt: String) {
         stopCapture()
+        identityPurpose = purpose
         lastVerdict = nil
         livePath = []
         screen = .confirmIdentity
-        say("First prove it's you: sign with your current signature, or use the recovery code.", .neutral)
+        say(prompt, .neutral)
     }
 
     private func confirmIdentity(_ signature: Signature) {
-        guard var current = profile else { return }
-        // Never the demo slider here: changing the signature always uses the enrolled threshold.
+        guard let current = profile else { return }
+        // Never the demo slider here: proving identity always uses the enrolled threshold.
         let verdict = verify(signature, deviceUID: AudioDeviceIdentity.headphoneUID(), against: current.enrollment)
         lastVerdict = verdict
         if verdict.rejection == .deviceUnknown {
             say(Self.describe(verdict), .warn)
         } else if verdict.accepted {
-            current.lockout.recordSuccess()
-            persist(current)
-            startReenrollment()
+            adjustLockout(.success)
+            identityConfirmed()
         } else {
-            current.lockout.recordFailure(now: Date())
-            persist(current)
+            adjustLockout(.failure)
             say(current.demoMode ? Self.describe(verdict) : "Not recognized.", .bad)
         }
     }
 
-    private func startReenrollment() {
+    private func identityConfirmed() {
+        switch identityPurpose {
+        case .changeSignature:
+            startReenrollment(returningToLab: false)
+        case .openLab:
+            lastVerdict = nil
+            livePath = []
+            screen = .lab
+            say("Test lab open. Pick the tester and scenario, then press Space.", .good)
+        }
+    }
+
+    private func startReenrollment(returningToLab: Bool) {
         isReenrolling = true
-        enrolledSoFar = []
+        returnToLabAfterEnroll = returningToLab
+        clearEnrollment()
         livePath = []
         lastVerdict = nil
         screen = .enroll
         say("Now sign your new signature 3 times.", .neutral)
+    }
+
+    // MARK: - Test lab (only with --test-mode)
+
+    /// The owner re-enrolls from inside the lab so the templates' raw motion is logged too.
+    func reenrollOwnerFromLab() {
+        guard testMode, screen == .lab else { return }
+        startReenrollment(returningToLab: true)
+    }
+
+    func labCount(for scenario: TestScenario) -> Int {
+        labCounts[labKey(scenario)] ?? 0
+    }
+
+    func leaveLab() {
+        cancelToHome()
+    }
+
+    private func labVerify(_ signature: Signature, rows: [MotionSample]) {
+        guard let current = profile else {
+            say("Enroll the owner first.", .warn)
+            return
+        }
+        let verdict = verify(signature, deviceUID: AudioDeviceIdentity.headphoneUID(), against: current.enrollment)
+        lastVerdict = verdict
+        var labels = currentLabels(scenario: testScenario)
+        labels.enrollment = current.enrollment.fingerprint
+        do {
+            try attemptLog.write(mode: .verify, labels: labels, samples: rows, verdict: verdict)
+            labCounts[labKey(testScenario), default: 0] += 1
+            say("\(Self.describe(verdict)) Logged.", verdict.accepted ? .good : .bad)
+        } catch {
+            say("\(Self.describe(verdict)) Could not save the test record: \(error.localizedDescription)", .bad)
+        }
+    }
+
+    private func logEnrollment(_ enrollment: Enrollment) {
+        guard testMode else { return }
+        var labels = currentLabels(scenario: .owner)
+        labels.tester = testOwner
+        labels.enrollment = enrollment.fingerprint
+        do {
+            for rows in enrolledRows {
+                try attemptLog.write(mode: .enroll, labels: labels, samples: rows, verdict: nil)
+            }
+        } catch {
+            say("Saved the signature, but could not save its test record: \(error.localizedDescription)", .bad)
+        }
+    }
+
+    private func currentLabels(scenario: TestScenario) -> AttemptLabels {
+        AttemptLabels(tester: testTester.trimmingCharacters(in: .whitespaces), scenario: scenario.rawValue,
+                      session: testSession.rawValue, owner: testOwner.trimmingCharacters(in: .whitespaces))
+    }
+
+    private func labKey(_ scenario: TestScenario) -> String {
+        "\(testSession.rawValue)|\(testTester.trimmingCharacters(in: .whitespaces))|\(scenario.rawValue)"
     }
 
     // MARK: - Settings
@@ -409,9 +515,9 @@ final class AppModel: ObservableObject {
 
     // MARK: - Helpers
 
-    private func registerFailure() {
+    private func adjustLockout(_ effect: Lockout.Effect) {
         guard var current = profile else { return }
-        current.lockout.recordFailure(now: Date())
+        current.lockout.apply(effect, now: Date())
         persist(current)
     }
 
