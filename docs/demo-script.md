@@ -59,7 +59,7 @@ Judges score success, failure and limits (Technical Demonstration), so we show a
 - **Why not Touch ID?** No special hardware; a fingerprint can't be changed if it leaks, a signature can; there's no trace to lift; nothing leaves the Mac. (Touch ID data also stays on the Mac, in the Secure Enclave, so don't claim Apple steals fingerprints.)
 - **Can I record your motion and replay it?** The data comes from the real AirPods through macOS. Faking it means running code on your Mac, and at that point the attacker has bigger options.
 - **How accurate is it?** Two rounds of real attempts. Round 1: owner 25/28, imitators 0/9. Round 2: owner 10/10, imitators 1/14. Small samples, so we show counts.
-- **Isn't the key just sitting in the Keychain?** Yes. The signature gates it, this-device-only. A fuzzy extractor is the fix, and it's our next step.
+- **Isn't the key just sitting in the Keychain?** Yes, in this Mac's login Keychain, which doesn't sync. The signature gates it. A fuzzy extractor is the fix, and it's our next step.
 - **What if I lose my AirPods?** The recovery code opens any `.airsign` file on any Mac with AirSign. Then enroll new AirPods.
 - **I have two Macs. Do I need the code every time?** No. Open one file with the code on the second Mac and tick Remember on this Mac. Only a Mac with its own enrolled signature can pair, the code itself isn't stored, and a fresh enrollment forgets all pairings. On a public Mac, type the code once and nothing is kept.
 - **Can someone fake your AirPods' ID?** It's readable over Bluetooth nearby, so gate 1 is only a deterrent: it stops someone casually trying with their own AirPods. It's never used as a key; the signature check still has to pass.
