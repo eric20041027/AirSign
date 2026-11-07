@@ -72,10 +72,24 @@ class Session:
 
 # ---------- loading ----------
 
-def load_attempt(path: Path) -> Attempt:
-    """Load one attempt-*.json. Raises ValueError on anything unexpected."""
-    m = STAMP.search(path.name)
-    if not m:
+@dataclass
+class Logged(Attempt):
+    """A test-mode record from the app (AttemptLog.swift): the spike fields plus labels and the app's verdict."""
+    tester: str = ""
+    scenario: str = ""
+    session: str = ""
+    owner: str = ""
+    enrollment: str = ""  # fingerprint of the templates; enroll records with the same value are those templates
+    accepted: bool | None = None
+    score: float | None = None  # None when the app's DTW was infinite
+    threshold: float | None = None
+    rejection: str | None = None  # wrongBud, wrongDevice, scoreTooHigh, deviceUnknown or None
+    lights: dict = field(default_factory=dict)
+
+
+def _parse(path: Path) -> tuple[dict, np.ndarray]:
+    """Read and check the fields every attempt file has. Raises ValueError on anything unexpected."""
+    if not STAMP.search(path.name):
         raise ValueError("file name is not attempt-YYYYMMDD-HHMMSS-mmm.json")
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
@@ -95,7 +109,66 @@ def load_attempt(path: Path) -> Attempt:
         raise ValueError(f"rows must be (n>=2, {N_COLS}), got {rows.shape}")
     if not np.isfinite(rows).all():
         raise ValueError("rows contain NaN or infinity")
-    return Attempt(id=m.group(1), mode=mode, who=who, loc=loc, rows=rows)
+    return data, rows
+
+
+def load_attempt(path: Path) -> Attempt:
+    """Load one spike attempt-*.json. Raises ValueError on anything unexpected."""
+    data, rows = _parse(path)
+    return Attempt(id=STAMP.search(path.name).group(1), mode=data["mode"], who=data["who"], loc=data["loc"], rows=rows)
+
+
+def _opt_float(value) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"bad number {value!r}")
+    return float(value)
+
+
+def load_logged(path: Path, root: Path) -> Logged:
+    """Load one test-mode record. Its id is the path under root, so two Macs' files never collide."""
+    data, rows = _parse(path)
+    labels = {}
+    for key in ("tester", "scenario", "session", "owner", "enrollment"):
+        value = data.get(key)
+        if not isinstance(value, str):
+            raise ValueError(f"missing {key} (not a test-mode record?)")
+        labels[key] = value.strip()
+    if not labels["scenario"] or not labels["enrollment"]:
+        raise ValueError("empty scenario or enrollment")
+    rec = Logged(id=path.relative_to(root).with_suffix("").as_posix(), mode=data["mode"], who=data["who"],
+                 loc=data["loc"], rows=rows, **labels)
+    if rec.mode == "verify":
+        accepted = data.get("accepted")
+        if not isinstance(accepted, bool):
+            raise ValueError(f"verify record without accepted: {accepted!r}")
+        rejection = data.get("rejection")
+        if rejection is not None and not isinstance(rejection, str):
+            raise ValueError(f"bad rejection {rejection!r}")
+        lights = data.get("lights") or {}
+        if not isinstance(lights, dict):
+            raise ValueError("bad lights")
+        rec.accepted, rec.rejection, rec.lights = accepted, rejection, lights
+        rec.score, rec.threshold = _opt_float(data.get("score")), _opt_float(data.get("threshold"))
+    return rec
+
+
+def load_logs(directories: list[Path]) -> list[Logged]:
+    """All test-mode records under the given folders (searched recursively), oldest first."""
+    out = []
+    for directory in directories:
+        root = Path(directory)
+        for path in sorted(root.rglob("attempt-*.json")):
+            try:
+                rec = load_logged(path, root)
+            except (ValueError, json.JSONDecodeError) as err:
+                print(f"[tuning] skip {path.relative_to(root)}: {err}", file=sys.stderr)
+                continue
+            rec.id = f"{root.name}/{rec.id}" if len(directories) > 1 else rec.id
+            out.append(rec)
+    out.sort(key=lambda r: (Path(r.id).name, r.id))
+    return out
 
 
 def load_dir(directory: Path) -> list[Attempt]:

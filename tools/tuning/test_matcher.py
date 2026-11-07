@@ -12,6 +12,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import evaluate as E  # noqa: E402
 import matcher as M  # noqa: E402
 import synth  # noqa: E402
 import tune  # noqa: E402
@@ -131,6 +132,74 @@ class TuneTests(unittest.TestCase):
         self.assertNotIn((0.5, 0.5, 0.5), w)
         self.assertNotIn((0.0, 0.0, 0.0), w)
         self.assertEqual(len(w), len(set(w)))
+
+
+class EvaluationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.dir = Path(cls.tmp.name)
+        synth.make_test_logs(cls.dir, np.random.default_rng(11), owner_n=5, imit_n=(2, 2, 3), a5_n=1, unknown_n=1,
+                             sessions=("S1-tonight", "S2-midnight"))
+        cls.records = M.load_logs([cls.dir / "mac1", cls.dir / "mac2"])
+        cls.data = E.build(cls.records)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_groups_by_enrollment_and_drops_device_unknown(self):
+        self.assertEqual(len(self.data.groups), 4)  # 2 Macs x 2 sessions
+        self.assertEqual(self.data.dropped_device_unknown, 4)
+        self.assertTrue(all(len(g.templates) == 3 for g in self.data.groups))
+        ids = [r.id for r in self.records]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertTrue(all(r.id.startswith(("mac1/", "mac2/")) for r in self.records))
+
+    def test_replay_matches_logged_scores_at_rotation_3(self):
+        match = E.app_match(self.data)
+        self.assertLess(match[E.SETTINGS[0].name], 1e-3)
+        self.assertGreater(match[E.SETTINGS[1].name], 1e-3)
+
+    def test_gate1_scenarios_are_never_accepted(self):
+        scored = E.score_all(self.data, E.SETTINGS[0])
+        a5 = [s for s in scored if s.rec.scenario in E.GATE1]
+        self.assertEqual(len(a5), 2 * 4)
+        self.assertTrue(all(math.isinf(s.ratio) for s in a5))
+
+    def test_upper_bounds(self):
+        self.assertAlmostEqual(E.upper95(0, 100), 0.03)
+        self.assertAlmostEqual(E.exact_zero_bound(100), 0.0295, places=3)
+        self.assertAlmostEqual(E.upper95(1, 20), 0.2161, places=3)  # one-sided Clopper-Pearson
+        self.assertEqual(E.upper95(5, 5), 1.0)
+
+    def test_eer(self):
+        self.assertEqual(E.eer([0.5, 0.8, 1.0], [2.0, 3.0, math.inf])[0], 0.0)
+        e, _ = E.eer([1.0, 2.0], [1.5, 3.0])
+        self.assertAlmostEqual(e, 0.5)
+
+    def test_choose_most_secure_factor_with_owner_target(self):
+        def rec(scenario, owner="O", session="S1-tonight"):
+            return M.Logged("x", "verify", "genuine", "right", np.zeros((2, 14)), scenario=scenario, owner=owner,
+                            session=session)
+        owners = [E.Scored(rec(E.OWNER), r, 0) for r in [0.5] * 18 + [1.28, 1.28]]  # 95% needs factor 1.3
+        imitators = [E.Scored(rec("A4-skilled"), r, 0) for r in [1.12, 1.6, 2.5]]
+        c = E.choose(E.SETTINGS[0], owners + imitators)
+        self.assertTrue(c.feasible)
+        self.assertEqual(c.factor, 1.3)  # below 1.3 owners are at 90%; 1.3-1.55 let 1 imitator in, 1.3 is tightest
+        row = E.row_at(c, c.factor)
+        self.assertGreaterEqual(row["owner_min"], 0.95)
+
+    def test_run_writes_report_and_charts(self):
+        import xml.etree.ElementTree as ET
+        out = self.dir / "docs" / "evaluation.md"
+        out.parent.mkdir(exist_ok=True)
+        E.run([self.dir / "mac1", self.dir / "mac2"], out)
+        text = out.read_text(encoding="utf-8")
+        for heading in ("## Recommendation", "## Rotation 3 vs 1.5", "## Quotable", "## Charts"):
+            self.assertIn(heading, text)
+        for name in ("scores.svg", "acceptance.svg"):
+            ET.parse(out.parent / "evaluation" / name)
 
 
 if __name__ == "__main__":

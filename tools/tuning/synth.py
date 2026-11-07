@@ -68,12 +68,84 @@ def make_round(out: Path, rng: np.random.Generator, day: str = "20991231", hour:
         write(out, stamp(), "verify", "forgery", "left", rows_for(owner_shape, 110, 0.3, owner_grav, rng))
 
 
+def b_shape(u: np.ndarray) -> np.ndarray:
+    return np.stack([2.5 * np.cos(3 * math.pi * u), 2 * np.sin(5 * math.pi * u) - 0.5, 1.2 * np.cos(2 * math.pi * u)], 1)
+
+
+def make_test_logs(out: Path, rng: np.random.Generator, owner_n: int = 20, imit_n: tuple[int, int, int] = (10, 10, 25),
+                   a5_n: int = 5, unknown_n: int = 2, sessions=("S1-tonight", "S2-midnight", "S3-morning")) -> None:
+    """Fake test-mode records like AttemptLog.swift writes, for two Macs (mac1: Eric, mac2: B).
+
+    The logged score/threshold/accepted come from the Python matcher at today's settings,
+    the same way the app computes them, so the replay check should match exactly.
+    """
+    from matcher import DEFAULT, Attempt, distance  # local: keep the module import light
+
+    owners = [("mac1", "Eric", "right", owner_shape, (0.0, 0.7, -0.7), ["B", "C"]),
+              ("mac2", "B", "left", b_shape, (0.2, 0.6, -0.75), ["Eric", "C"])]
+    for mac, owner, side, shape, grav, imitators in owners:
+        d = out / mac / "test-logs"
+        d.mkdir(parents=True, exist_ok=True)
+        k = 0
+
+        def save(body: dict) -> None:
+            nonlocal k
+            k += 1
+            stamp = f"20991231-{k // 3600:02d}{k // 60 % 60:02d}{k % 60:02d}-{k % 1000:03d}"
+            (d / f"attempt-{stamp}.json").write_text(json.dumps(body), encoding="utf-8")
+
+        def body(mode, tester, scenario, session, fp, loc, rows) -> dict:
+            return {"mode": mode, "who": "genuine" if scenario == "A1-owner" else "forgery", "tester": tester,
+                    "scenario": scenario, "session": session, "owner": owner, "enrollment": fp,
+                    "savedAt": "2099-12-31T00:00:00Z", "dur": float(rows[-1, 0] - rows[0, 0]), "loc": loc,
+                    "columns": COLUMNS, "rows": rows.round(6).tolist()}
+
+        for session in sessions:
+            fp = "".join(rng.choice(list("0123456789abcdef"), 12))
+            templates = [rows_for(shape, int(rng.integers(105, 116)), 0.25, grav, rng) for _ in range(3)]
+            for rows in templates:
+                save(body("enroll", owner, "A1-owner", session, fp, side, rows))
+            tmpl = [Attempt("t", "enroll", "genuine", side, r) for r in templates]
+            worst = max(distance(tmpl[i], tmpl[j]) for i in range(3) for j in range(i + 1, 3))
+            threshold = DEFAULT.threshold_factor * worst
+
+            def verify(tester, scenario, rows, loc=side, gate1=None):
+                b = body("verify", tester, scenario, session, fp, loc, rows)
+                score = min(distance(Attempt("a", "verify", "x", loc, rows), t) for t in tmpl)
+                rejection = gate1 or (None if score <= threshold else "scoreTooHigh")
+                b.update(accepted=rejection is None, score=score, threshold=threshold, rejection=rejection,
+                         lights={"grip": 0.5, "sizeTempo": 0.5, "rhythm": 0.5})
+                save(b)
+
+            for _ in range(owner_n):
+                verify(owner, "A1-owner", rows_for(shape, int(rng.integers(100, 125)), 0.3, grav, rng))
+            for imitator in imitators:
+                for scenario, n, mix in (("A2-zero-effort", imit_n[0], 0.0), ("A3-watched-once", imit_n[1], 0.4),
+                                         ("A4-skilled", imit_n[2], 0.7)):
+                    other = forgery_shape if shape is owner_shape else owner_shape
+                    g = tuple(np.add(grav, (0.25 - mix * 0.3, -0.1, 0.05)))
+                    for _ in range(n):
+                        s = lambda u, mix=mix: mix * shape(u) + (1 - mix) * other(u)
+                        verify(imitator, scenario, rows_for(s, int(rng.integers(95, 135)), 0.35, g, rng))
+            other_side = "left" if side == "right" else "right"
+            for _ in range(a5_n):
+                verify(owner, "A5-other-bud", rows_for(shape, 110, 0.3, grav, rng), loc=other_side, gate1="wrongBud")
+                verify(owner, "A5-other-pair", rows_for(shape, 110, 0.3, grav, rng), gate1="wrongDevice")
+            for _ in range(unknown_n):
+                verify(owner, "A1-owner", rows_for(shape, 110, 0.3, grav, rng), gate1="deviceUnknown")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("out", type=Path)
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--test-logs", action="store_true", help="write fake test-mode records (mac1/, mac2/) instead")
     args = ap.parse_args()
-    make_round(args.out, np.random.default_rng(args.seed))
+    rng = np.random.default_rng(args.seed)
+    if args.test_logs:
+        make_test_logs(args.out, rng)
+    else:
+        make_round(args.out, rng)
     print(f"wrote fake attempts to {args.out}")
 
 
