@@ -4,6 +4,8 @@
 > - Check every number against `docs/tuning.md` and the final build.
 > - Decide whether the app ships `FeatureScale.rotation = 1.5` (the tuning result) or stays at 3, and update "How we built it".
 > - If the second-Mac test passed (copied `.airsign` won't open; recovery code does), add "working on two Macs" under Accomplishments.
+> - Add the test-lab results from `docs/evaluation.md` under Accomplishments, in the same form: "for these imitators, x/n (Wilson 95% interval a–b%)". Keep the prototype numbers as the earlier round.
+> - Name check: Shao et al. (2020) already published a system called "AirSign" (see Inspiration). Decide whether to keep the name.
 > - Add the demo video link and screenshots. Delete this box.
 
 **Tagline:** Lock any file on your Mac by signing in the air with an AirPod. Only your AirPod, your grip and your wrist rhythm open it.
@@ -20,6 +22,12 @@ A fingerprint is also a secret you can never change. It's left on every cup and 
 - never leaves your Mac
 
 Then we found that AirPods stream motion data to macOS 50 times a second, even when you hold one in your fingers.
+
+Signing in the air isn't a new idea, and neither is the name. Shao, Yang, Wang and Ma's "AirSign: Smartphone Authentication by Signing in the Air" (*Sensors*, 2020) verifies a signature drawn in the air with a smartphone, using the phone's motion sensors plus acoustic echoes. We build on the same idea with three differences:
+
+- no phone in your hand: an AirPod pinched between your fingers
+- the signature unlocks file keys on a Mac, rather than unlocking a phone
+- our tests pit the owner against imitators who studied them first
 
 ## What it does
 
@@ -52,14 +60,14 @@ Nothing is uploaded. AirSign makes no network connections.
   - Banded dynamic time warping (25% band) compares two signatures, normalized by their lengths and stretched by 1 + 0.5·|ln duration ratio|.
   - The score is the closest of the 3 templates. The threshold is 1.25 × the worst distance between your own enrollments, and demo mode can only make it stricter.
 - **Prototype first:** before writing the app, we built a throwaway spike (Swift motion server plus a web page with live charts) and recorded 116 attempts from owners and imitators.
-- **Tuning on a Windows PC:** a Python copy of the matcher replayed those recordings to grid-search the band, duration weight, threshold factor and feature weights. Its scores match the spike: AUC 0.957 vs 0.96 on round 2.
+- **Tuning on a Windows PC:** a Python copy of the matcher replayed those recordings to grid-search the band, duration weight, threshold factor and feature weights. It reproduces the prototype's round-2 result exactly: owner 10/10 (Wilson 95% interval 72–100%), and for these imitators 1/14 (1.3–31%).
 - **Three people, three machines:** a MacBook Pro for the core app, a MacBook Air for Finder integration and a second-Mac test, and a Windows PC for tuning, this write-up and the video.
 
 ## Challenges we ran into
 
 - **AirPods aren't a pen.** Only one bud streams at a time, and a hand-held bud stops streaming the moment your finger slips off the in-ear sensor. The recorder discards those attempts instead of counting them as failures.
-- **Long signatures are worse.** Our first 6-second signatures were so inconsistent that the owner was rejected almost half the time. About 2 seconds turned out far more stable.
-- **Imitators learn.** In round 1, grip angle alone separated owner from imitators perfectly (AUC 1.00). In round 2, after imitators copied the grip, each signal alone dropped to AUC 0.92–0.94, and only the combined score held (0.96). So the gates feed one score instead of each needing a pass.
+- **Long signatures are worse.** With our first 6-second signatures, the owner got in only 8/14 times (Wilson 95% interval 33–79%), even at the prototype's looser threshold. About 2 seconds turned out far more stable.
+- **Imitators learn.** In round 1, grip angle alone was enough to tell the owner from these imitators. In round 2, once they had copied the grip, no single signal was, and only the combined score still held. So the gates feed one score instead of each needing a pass.
 - **Fair testing.** Imitators who used the other AirPod were always rejected, but that's gate 1, not forgery resistance, so we left those attempts out of the matcher numbers.
 - **Free signing only.** With a free Apple ID, we had to make sure rebuilding the app doesn't lose access to its Keychain items.
 - **Never lose a file.** Locking writes the `.airsign` file and decrypts it in memory before the original goes anywhere, and the original goes to the Trash rather than being deleted.
@@ -67,22 +75,23 @@ Nothing is uploaded. AirSign makes no network connections.
 ## Accomplishments that we're proud of
 
 - A full lock → unlock → recover loop from the Finder right-click menu, plus pairing so your own second Mac opens your files with your signature.
-- Honest numbers from 2 rounds of real attempts. Imitators watched the owner sign before trying, and only same-bud attempts count:
+- Honest numbers from 2 prototype rounds of real attempts. The imitators watched the owner sign before trying, and only same-bud attempts count. Every number is for **these imitators**, as x/n with a Wilson 95% interval. A handful of people can't speak for everyone.
 
-| Round | Owner accepted | Imitators accepted | AUC |
-|---|---|---|---|
-| 1 (imitators hadn't learned the grip) | 25/28 | 0/9 | 0.99 |
-| 2 (imitators copied the grip) | 10/10 | 1/14 | 0.96 |
+| Round | Owner accepted | Imitators accepted |
+|---|---|---|
+| 1 (imitators hadn't learned the grip) | 25/28 (73–96%) | 0/9 (0–30%) |
+| 2 (imitators copied the grip) | 10/10 (72–100%) | 1/14 (1.3–31%) |
 
-- Tuning found that weighting wrist rhythm twice as heavily (`FeatureScale.rotation` 3 → 1.5) raises round-1 owner acceptance to 27/28 without letting in any more imitators. This matches what round 2 told us: once the grip is copied, rhythm is what's left.
+- Tuning found that weighting wrist rhythm twice as heavily (`FeatureScale.rotation` 3 → 1.5) raises round-1 owner acceptance to 27/28 (Wilson 95% interval 82–99%), while these imitators still got in 0/9 (0–30%) and 1/14 (1.3–31%) times. This matches what round 2 told us: once the grip is copied, rhythm is what's left.
+- A pre-registered test protocol: the app's matcher was frozen before the test lab ran, thresholds for any alternative come from the owners' first session only, and alternatives must beat it on later sessions to replace it.
 - A threat model we can defend, including what we don't stop.
 
 ## What we learned
 
 - Motion biometrics are a "something you do" factor: it's much easier to show what an imitator can't copy than to promise nobody can.
-- Combined features beat any single one once attackers adapt. Grip alone fell from AUC 1.00 to 0.93 between rounds; the combined score went from 0.99 to 0.96.
+- Combined features beat any single one once attackers adapt. In round 2, grip alone no longer told owner and imitators apart, but the combined score still let these imitators in only 1/14 times (Wilson 95% interval 1.3–31%).
 - Measure first: a one-hour spike with real recordings saved us from tuning against made-up data.
-- Small samples move fast: with 10–28 attempts per side, one attempt shifts a rate by 3–10 points. We report counts, not just percentages.
+- Small samples move fast: with 10–28 attempts per side, one attempt shifts a rate by 3–10 points. That's why we give counts with Wilson 95% intervals instead of bare percentages: 1/14 could mean anything from about 1% to 31%.
 
 ## Threat model and limits
 
@@ -94,7 +103,7 @@ Nothing is uploaded. AirSign makes no network connections.
 | Tries at your Mac with their own AirPods | Yes, at gate 1 | Turned away before scoring. A deterrent only: the Bluetooth ID is readable nearby, so it's never a key |
 | Uses your logged-in Mac while you're away | Yes | Needs your AirPods, grip and rhythm; 5 failures lock for 5 minutes |
 | Steals your AirPods | Yes | Still needs your grip and rhythm |
-| Watches you sign, then imitates | Partly | 1 of 14 skilled attempts got through in round 2, even at the strictest setting we tried |
+| Watches you sign, then imitates | Partly | For these imitators, 1/14 attempts got through in round 2 (Wilson 95% interval 1.3–31%), even at the strictest setting we tried |
 | Replays recorded motion data | Mostly | Motion comes from the real AirPods via the OS; faking it means running code on your Mac |
 | Knows your Mac password and can read the Keychain | No | The signature gates the key; it isn't the key |
 | Digs the original out of the Trash | No | The plaintext stays there until you empty the Trash |
@@ -108,6 +117,7 @@ Limits we want to be upfront about:
 - **The signature gates the key; it isn't the key.** Someone with your login password and the skills to read your Keychain could skip the signature.
 - **The original stays in the Trash** until you empty it. We chose that over deleting it so a bug can never cost you a file.
 - **Gate 1 is a deterrent, not a secret.** An attacker who reads your AirPods' Bluetooth ID nearby learns nothing that unlocks a file; the signature check still has to pass.
+- **Small, in-house test.** Two owners and a few imitators, all from our team or nearby. One teammate was both an imitator and the person who analysed the results. To limit that, the matcher was frozen before testing, and alternatives were judged by pre-registered rules.
 
 ## What's next
 
@@ -116,6 +126,13 @@ Limits we want to be upfront about:
 - **Secure delete:** wipe the original instead of moving it to the Trash.
 - **Folders and multiple files,** and a proper Finder extension.
 - **More data:** tune each gate with many more owners and imitators.
+
+## References
+
+- Y. Shao, T. Yang, H. Wang, J. Ma. "AirSign: Smartphone Authentication by Signing in the Air." *Sensors* 21(1):104, 2020. doi:10.3390/s21010104
+- Wilson score interval for every k/n; rule of three for 0/n.
+- ISO/IEC 30107-3 for reporting deliberate imitations as attack success rates, apart from the false accept rate.
+- A. J. Mansfield and J. L. Wayman, *Best Practices in Testing and Reporting Performance of Biometric Devices*, NPL, 2002: freeze settings before testing.
 
 ## Built with
 
