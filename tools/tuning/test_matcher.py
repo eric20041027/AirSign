@@ -219,6 +219,21 @@ class ProtocolV2Tests(unittest.TestCase):
         self.assertIsNone(r[1].ok)
         self.assertEqual(B.verdict(r), "pending")
 
+    def test_unmarked_normalized_challengers_still_get_reference_1(self):
+        """algorithms.py (role B) doesn't set self_normalized; bakeoff decides by name instead."""
+        import algorithms_ref as R
+        import bakeoff as B
+        plain = {n: (lambda a, t, f=R.ALGORITHMS[n]: f(a, t)) for n in ("baseline", *B.CHALLENGERS)}
+        self.assertFalse(any(hasattr(f, "self_normalized") for f in plain.values()))
+        unmarked = {r.name: r.rs for r in B.evaluate_all(self.data.cases, plain)}
+        marked = {r.name: r.rs for r in B.evaluate_all(self.data.cases, dict(R.ALGORITHMS))}
+        for name in B.CHALLENGERS:
+            self.assertEqual(unmarked[name], marked[name], name)
+        # without the name rule, nfm gets single-template references: this port raises, and
+        # algorithms.py's version divides by its 1e-3 floor so every ratio collapses toward 0
+        with self.assertRaises(ValueError):
+            E.ratios(plain["normalized_nfm"], self.data.cases)
+
     def test_reports_render(self):
         import xml.etree.ElementTree as ET
         import bakeoff as B

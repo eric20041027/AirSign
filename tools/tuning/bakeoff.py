@@ -30,6 +30,10 @@ import evaluate as E
 
 REPO = Path(__file__).resolve().parents[2]
 CHALLENGERS = ["gyro_x2", "normalized_nfm", "dtw_plus_global"]
+# Already divided by the templates' own spread (algorithm-bakeoff.md: nfm's threshold is one global
+# constant), so threshold = factor. Decided by name, because algorithms.py doesn't mark them, and
+# feeding these a single template (the default reference) breaks them: nfm's near/far become 0.
+SELF_NORMALIZED = {"normalized_nfm", "dtw_plus_global"}
 P_7_0 = 0.5 ** 7
 
 
@@ -64,7 +68,7 @@ class Result:
 def evaluate_all(cases: list[E.Case], algs: dict) -> list[Result]:
     out = []
     for name, alg in algs.items():
-        rs = E.ratios(alg, cases)
+        rs = E.ratios(alg, cases, normalized=name in SELF_NORMALIZED)
         frozen = name == "baseline"
         out.append(Result(name, rs, E.FROZEN_FACTOR if frozen else E.s1_factor(cases, rs), frozen))
         print(f"[bakeoff] {name}: factor {out[-1].factor}", file=sys.stderr)
