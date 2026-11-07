@@ -1,0 +1,3 @@
+__pycache__/
+# signature recordings never go in the repo
+attempt-*.json
