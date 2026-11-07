@@ -17,3 +17,6 @@ spikes/airpods-motion/*.csv
 .env
 *.p12
 *.cer
+
+# Plan execution workspace
+.superpowers/
