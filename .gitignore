@@ -1,0 +1,19 @@
+.DS_Store
+.vscode/
+.idea/
+
+# Swift build output
+airsign/.build/
+airsign/build/
+spikes/airpods-motion/build/
+
+# Signature data is biometric-like personal data: never commit it
+spikes/airpods-motion/sessions/
+spikes/airpods-motion/*.csv
+*.csv
+*.airsign
+
+# Secrets
+.env
+*.p12
+*.cer
