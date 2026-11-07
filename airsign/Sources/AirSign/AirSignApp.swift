@@ -18,6 +18,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--selftest-keychain") {
             runKeychainSelfTest()
         }
+        if CommandLine.arguments.contains("--probe") {
+            ProbeMode.run()
+        }
     }
 
     // Proves the Keychain item written by one build is readable by the next build without a prompt.
