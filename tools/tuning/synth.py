@@ -72,12 +72,15 @@ def b_shape(u: np.ndarray) -> np.ndarray:
     return np.stack([2.5 * np.cos(3 * math.pi * u), 2 * np.sin(5 * math.pi * u) - 0.5, 1.2 * np.cos(2 * math.pi * u)], 1)
 
 
-def make_test_logs(out: Path, rng: np.random.Generator, owner_n: int = 20, imit_n: tuple[int, int, int] = (10, 10, 25),
-                   a5_n: int = 5, unknown_n: int = 2, sessions=("S1-tonight", "S2-midnight", "S3-morning")) -> None:
-    """Fake test-mode records like AttemptLog.swift writes, for two Macs (mac1: Eric, mac2: B).
+def make_test_logs(out: Path, rng: np.random.Generator, owner_n: int = 20, imit_n: tuple[int, int] = (10, 10),
+                   a4_n: tuple[int, int] = (15, 10), a5_n: int = 5, unknown_n: int = 2,
+                   sessions=("S1-tonight", "S2-midnight", "S3-morning")) -> None:
+    """Fake test-mode records like AttemptLog.swift writes, under test protocol v2, for two Macs (mac1: Eric, mac2: B).
 
-    The logged score/threshold/accepted come from the Python matcher at today's settings,
-    the same way the app computes them, so the replay check should match exactly.
+    Owners enroll once, in S1, and every later attempt is logged against that enrollment.
+    S1: A1, A2, A3, A4 (a4_n[0] per imitator), A5. S2: A1 only. S3: A1 and A4 (a4_n[1], blind).
+    Later sessions drift the owner's grip a little. The logged score/threshold/accepted come from
+    the Python matcher at today's settings, the way the app computes them.
     """
     from matcher import DEFAULT, Attempt, distance  # local: keep the module import light
 
@@ -100,16 +103,17 @@ def make_test_logs(out: Path, rng: np.random.Generator, owner_n: int = 20, imit_
                     "savedAt": "2099-12-31T00:00:00Z", "dur": float(rows[-1, 0] - rows[0, 0]), "loc": loc,
                     "columns": COLUMNS, "rows": rows.round(6).tolist()}
 
-        for session in sessions:
-            fp = "".join(rng.choice(list("0123456789abcdef"), 12))
-            templates = [rows_for(shape, int(rng.integers(105, 116)), 0.25, grav, rng) for _ in range(3)]
-            for rows in templates:
-                save(body("enroll", owner, "A1-owner", session, fp, side, rows))
-            tmpl = [Attempt("t", "enroll", "genuine", side, r) for r in templates]
-            worst = max(distance(tmpl[i], tmpl[j]) for i in range(3) for j in range(i + 1, 3))
-            threshold = DEFAULT.threshold_factor * worst
+        fp = "".join(rng.choice(list("0123456789abcdef"), 12))
+        templates = [rows_for(shape, int(rng.integers(105, 116)), 0.25, grav, rng) for _ in range(3)]
+        for rows in templates:
+            save(body("enroll", owner, "A1-owner", sessions[0], fp, side, rows))
+        tmpl = [Attempt("t", "enroll", "genuine", side, r) for r in templates]
+        worst = max(distance(tmpl[i], tmpl[j]) for i in range(3) for j in range(i + 1, 3))
+        threshold = DEFAULT.threshold_factor * worst
+        other = forgery_shape if shape is owner_shape else owner_shape
 
-            def verify(tester, scenario, rows, loc=side, gate1=None):
+        for si, session in enumerate(sessions):
+            def verify(tester, scenario, rows, loc=side, gate1=None, session=session):
                 b = body("verify", tester, scenario, session, fp, loc, rows)
                 score = min(distance(Attempt("a", "verify", "x", loc, rows), t) for t in tmpl)
                 rejection = gate1 or (None if score <= threshold else "scoreTooHigh")
@@ -117,22 +121,29 @@ def make_test_logs(out: Path, rng: np.random.Generator, owner_n: int = 20, imit_
                          lights={"grip": 0.5, "sizeTempo": 0.5, "rhythm": 0.5})
                 save(b)
 
+            drift = tuple(np.add(grav, (0.03 * si, -0.02 * si, 0.0)))
             for _ in range(owner_n):
-                verify(owner, "A1-owner", rows_for(shape, int(rng.integers(100, 125)), 0.3, grav, rng))
+                verify(owner, "A1-owner", rows_for(shape, int(rng.integers(100, 125)), 0.3, drift, rng))
+            plan = []
+            if si == 0:
+                plan = [("A2-zero-effort", imit_n[0], (0.0, 0.0)), ("A3-watched-once", imit_n[1], (0.3, 0.5)),
+                        ("A4-skilled", a4_n[0], (0.6, 0.9))]
+            elif session.startswith("S3"):
+                plan = [("A4-skilled", a4_n[1], (0.55, 0.85))]
             for imitator in imitators:
-                for scenario, n, mix in (("A2-zero-effort", imit_n[0], 0.0), ("A3-watched-once", imit_n[1], 0.4),
-                                         ("A4-skilled", imit_n[2], 0.7)):
-                    other = forgery_shape if shape is owner_shape else owner_shape
-                    g = tuple(np.add(grav, (0.25 - mix * 0.3, -0.1, 0.05)))
+                for scenario, n, (lo, hi) in plan:
                     for _ in range(n):
+                        mix = float(rng.uniform(lo, hi))
+                        g = tuple(np.add(grav, (0.25 - mix * 0.28, -0.1 + mix * 0.08, 0.05)))
                         s = lambda u, mix=mix: mix * shape(u) + (1 - mix) * other(u)
                         verify(imitator, scenario, rows_for(s, int(rng.integers(95, 135)), 0.35, g, rng))
-            other_side = "left" if side == "right" else "right"
-            for _ in range(a5_n):
-                verify(owner, "A5-other-bud", rows_for(shape, 110, 0.3, grav, rng), loc=other_side, gate1="wrongBud")
-                verify(owner, "A5-other-pair", rows_for(shape, 110, 0.3, grav, rng), gate1="wrongDevice")
-            for _ in range(unknown_n):
-                verify(owner, "A1-owner", rows_for(shape, 110, 0.3, grav, rng), gate1="deviceUnknown")
+            if si == 0:
+                other_side = "left" if side == "right" else "right"
+                for _ in range(a5_n):
+                    verify(owner, "A5-other-bud", rows_for(shape, 110, 0.3, grav, rng), loc=other_side, gate1="wrongBud")
+                    verify(owner, "A5-other-pair", rows_for(shape, 110, 0.3, grav, rng), gate1="wrongDevice")
+                for _ in range(unknown_n):
+                    verify(owner, "A1-owner", rows_for(shape, 110, 0.3, grav, rng), gate1="deviceUnknown")
 
 
 def main() -> None:

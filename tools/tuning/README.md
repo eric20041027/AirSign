@@ -40,15 +40,32 @@ After each session, unzip each Mac's `airsign-test-logs-*.zip` into its own fold
 python tune.py --test-logs C:/airsign-data/mac1-S1 C:/airsign-data/mac2-S1 --report ../../docs/evaluation.md
 ```
 
-Pass every session's folders at once; folders are searched recursively. This writes
-`docs/evaluation.md` and two charts in `docs/evaluation/`:
+Pass every session's folders at once; folders are searched recursively. Add
+`--note "Discarded: ..."` for the paper tally of discarded tries. This follows test
+protocol v2 and writes `docs/evaluation.md` plus two charts in `docs/evaluation/`:
 
-- Each verify record is replayed against the enroll records with the same `enrollment`.
+- Owners enroll once, in S1. Every attempt, S2 and S3 included, is scored against
+  the owner's S1 templates.
 - Attempts with `rejection: deviceUnknown` are left out (the app didn't count them).
-- It reports acceptance per scenario, with the owner per session.
-- It picks the tightest `thresholdFactor` (1.0–2.0) that keeps every owner/session at ≥ 95%, for `FeatureScale.rotation` 3 and 1.5.
-- It adds 95% upper bounds (the rule of three when nothing got through) and the equal error rate.
+- The frozen baseline (the app today, factor 1.25) is primary.
+- A secondary factor comes from S1 owner attempts only: the smallest with ≥ 95%
+  accepted, plus 0.10, applied unchanged to S2/S3.
+- Results are k/n per owner and scenario with Wilson 95% intervals. A2 is reported
+  as FAR; A3 and A4 as attack success rates. EER is for S1 only.
 - It checks that the Python replay matches the scores the app logged.
+
+## Algorithm bake-off (docs/algorithm-bakeoff.md)
+
+```bash
+python bakeoff.py C:/airsign-data/mac1-S1 C:/airsign-data/mac2-S1 --report ../../docs/algorithm-comparison.md
+```
+
+- Compares the frozen `baseline` with exactly three challengers: `gyro_x2`, `normalized_nfm`, `dtw_plus_global`.
+- Challengers come from role B's `algorithms.py` when it has them, otherwise from `algorithms_ref.py`, a
+  tested port of `quick_candidates.py`. The report says which was used.
+- Each challenger's factor comes from S1 owners only (+0.10).
+- The report ends with the switch rule: paired owner rejections no worse; S1 factor holds on S2 and S3;
+  on S3 A4 plus all A3, a paired advantage at least as strong as 7:0.
 
 `python synth.py OUT_DIR --test-logs` writes fake records in the same format for a dry run.
 
@@ -56,7 +73,10 @@ Pass every session's folders at once; folders are searched recursively. This wri
 
 - `matcher.py`: loading, features, banded DTW, distance, scoring
 - `tune.py`: grid search and the markdown report; `--test-logs` hands off to `evaluate.py`
-- `evaluate.py`: replays test-mode records and writes `docs/evaluation.md`
+- `evaluate.py`: protocol v2 core (S1 templates, Wilson, S1 factor, EER) and `docs/evaluation.md`
+- `bakeoff.py`: baseline vs the three challengers and the switch rule, `docs/algorithm-comparison.md`
+- `algorithms_ref.py`: reference baseline and challengers (fallback until `algorithms.py` lands)
+- `quick_candidates.py`: the prototype reference the port is tested against
 - `svgchart.py`: the two static SVG charts (standard library only)
 - `synth.py`: fake data in the spike's format
 - `test_matcher.py`: tests, including a check that the fast DTW matches a literal port of the spike's `dtw()`

@@ -43,9 +43,10 @@ class Series:
     ys: list[float]  # NaN breaks the line
 
 
-def _text(x, y, s, size=12, color=TEXT, anchor="start", weight="normal") -> str:
+def _text(x, y, s, size=12, color=TEXT, anchor="start", weight="normal", halo=False) -> str:
+    ring = f' stroke="{SURFACE}" stroke-width="4" stroke-linejoin="round" paint-order="stroke"' if halo else ""
     return (f'<text x="{x:.1f}" y="{y:.1f}" {FONT} font-size="{size}" fill="{color}" '
-            f'text-anchor="{anchor}" font-weight="{weight}">{escape(s)}</text>')
+            f'text-anchor="{anchor}" font-weight="{weight}"{ring}>{escape(s)}</text>')
 
 
 def _open(h: int, title: str) -> list[str]:
@@ -104,7 +105,9 @@ def strip_plot(path: Path, title: str, rows: list[StripRow], marks: list[Mark]) 
         ly = top - 12 - 14 * (len(marks) - 1 - i)
         out.append(f'<line x1="{sx(m.x):.1f}" y1="{ly + 4}" x2="{sx(m.x):.1f}" y2="{h - bottom}" stroke="{color}" '
                    f'stroke-width="1.5"{dash}/>')
-        out.append(_text(sx(m.x) + 4, ly, m.label, 11, color))
+    for i, m in enumerate(marks):  # labels last, with a surface halo, so no threshold line crosses them
+        ly = top - 12 - 14 * (len(marks) - 1 - i)
+        out.append(_text(sx(m.x) + 4, ly, m.label, 11, TEXT_2 if m.dashed else TEXT, halo=True))
     out.append("</svg>")
     Path(path).write_text("\n".join(out), encoding="utf-8")
 
