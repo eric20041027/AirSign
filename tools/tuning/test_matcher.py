@@ -110,6 +110,21 @@ class TuneTests(unittest.TestCase):
         self.assertGreaterEqual(best.owner_ok / best.owner_n, 0.9)
         self.assertEqual(best.imitator_ok, 0)
 
+    def test_every_round_must_reach_owner_target(self):
+        p = M.Params()
+        weak_round = tune.Row(p, [tune.Count(10, 10, 0, 5, 1.0), tune.Count(8, 10, 0, 5, 1.0)],
+                              tune.Count(18, 20, 0, 10, 1.0))
+        strong = tune.Row(M.Params(threshold_factor=1.5), [tune.Count(9, 10, 1, 5, 0.9), tune.Count(9, 10, 1, 5, 0.9)],
+                          tune.Count(18, 20, 2, 10, 0.9))
+        self.assertIs(tune.pick_best([weak_round, strong], owner_min=0.9), strong)
+
+    def test_ties_go_to_fewest_changed_constants(self):
+        c = tune.Count(10, 10, 0, 5, 0.9)
+        two = tune.Row(M.Params(duration_weight=0.25, weights=(1.0, 0.5, 0.5)), [tune.Count(10, 10, 0, 5, 0.95)], c)
+        one = tune.Row(M.Params(weights=(1.0, 0.5, 0.5)), [c], c)
+        self.assertEqual(tune.changed_constants(one.params), 1)
+        self.assertIs(tune.pick_best([two, one]), one)
+
     def test_weight_grid_drops_scaled_duplicates(self):
         w = tune.weight_grid([0.0, 0.5, 1.0, 2.0])
         self.assertIn((1.0, 1.0, 1.0), w)
