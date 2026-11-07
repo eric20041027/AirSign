@@ -30,6 +30,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var lockoutRemaining: TimeInterval?
     /// Set while the profile can't be written: attempts are refused so the lockout can't be dodged.
     @Published private(set) var saveBlocked = false
+    @Published private(set) var pairedMacCount = 0
     @Published var thresholdOverride: Double?
 
     /// `open -a AirSign --args --test-mode` adds the test lab. Lab attempts open no files, so they
@@ -67,6 +68,7 @@ final class AppModel: ObservableObject {
             say("Your AirSign profile could not be read. Enroll again; locked files still open with the recovery code.", .bad)
         }
         screen = profile == nil ? .enroll : .home
+        pairedMacCount = (try? store.pairedRecoveryKeys().count) ?? 0
         motion.onSample = { [weak self] sample in MainActor.assumeIsolated { self?.handle(sample) } }
         motion.onStatus = { [weak self] status in MainActor.assumeIsolated { self?.motionStatus = status } }
         motion.start()
@@ -263,6 +265,7 @@ final class AppModel: ObservableObject {
         do {
             try store.createProfile(pending)
             profile = pending
+            pairedMacCount = 0
         } catch {
             clearEnrollment()
             say("Could not save the signature: \(error.localizedDescription). Enroll again.", .bad)
@@ -306,18 +309,26 @@ final class AppModel: ObservableObject {
             return
         }
         adjustLockout(.success)
-        let heading = current.demoMode ? Self.describe(verdict) : "Recognized."
         do {
             let master = try store.masterKey()
-            let outcome = unlockPending { try LockedFile.open($0, masterKey: master) }
-            let foreign = outcome.wrongKey.map { "\($0.lastPathComponent): locked on another Mac. Use that Mac's recovery code." }
+            let paired = try store.pairedRecoveryKeys()
+            let outcome = unlockPending { try Self.openWithThisMacsKeys($0, master: master, paired: paired) }
+            if outcome.restored.isEmpty, outcome.errors.isEmpty, !outcome.wrongKey.isEmpty {
+                say("Your signature matched, but this file was locked on a Mac that isn't paired with this one. "
+                    + "Use that Mac's recovery code once and tick “Remember on this Mac”: after that, your AirPods "
+                    + "and signature open its files here too.", .warn)
+                return
+            }
+            let heading = current.demoMode ? Self.describe(verdict) : "Recognized."
+            let foreign = outcome.wrongKey.map { "\($0.lastPathComponent): locked on a Mac that isn't paired with this one. Use its recovery code." }
             report(heading: heading, outcome: outcome, extra: foreign)
         } catch {
             say("Could not read AirSign's keys: \(error.localizedDescription)", .bad)
         }
     }
 
-    func submitRecoveryCode(_ code: String) {
+    /// `rememberOnThisMac` pairs this Mac with the one that locked the file, once the code has opened it.
+    func submitRecoveryCode(_ code: String, rememberOnThisMac: Bool = false) {
         if let remaining = profile?.lockout.remaining(now: Date()) {
             say("Too many tries. Wait \(Int(remaining.rounded(.up))) s.", .bad)
             return
@@ -344,8 +355,47 @@ final class AppModel: ObservableObject {
         }
         let outcome = unlockPending { try LockedFile.open($0, recoveryCode: code) }
         adjustLockout(Lockout.recoveryEffect(restored: outcome.restored.count, wrongKey: outcome.wrongKey.count))
-        let wrong = outcome.wrongKey.map { "\($0.lastPathComponent): wrong recovery code." }
-        report(heading: "Recovery code", outcome: outcome, extra: wrong)
+        var extra = outcome.wrongKey.map { "\($0.lastPathComponent): wrong recovery code." }
+        if rememberOnThisMac, profile != nil, !outcome.restored.isEmpty {
+            extra.append(pairThisMac(withCode: code))
+        }
+        report(heading: "Recovery code", outcome: outcome, extra: extra)
+    }
+
+    /// Only a Mac with its own enrolled signature can be paired; a public Mac just uses the code once.
+    private func pairThisMac(withCode code: String) -> String {
+        do {
+            let added = try store.addPairedRecoveryKey(RecoveryCode.privateKey(for: code))
+            pairedMacCount = try store.pairedRecoveryKeys().count
+            return added
+                ? "Paired: files from that Mac now open here with your AirPods and signature."
+                : "This Mac was already paired with that one."
+        } catch {
+            return "Could not pair this Mac: \(error.localizedDescription)"
+        }
+    }
+
+    func forgetPairedMacs() {
+        do {
+            try store.forgetPairedMacs()
+            pairedMacCount = 0
+            say("Forgot all paired Macs. Their files open here only with their recovery codes.", .good)
+        } catch {
+            say("Could not forget paired Macs: \(error.localizedDescription)", .bad)
+        }
+    }
+
+    /// This Mac's master key first, then the keys of Macs the owner paired with this one.
+    private static func openWithThisMacsKeys(_ data: Data, master: SymmetricKey,
+                                             paired: [Curve25519.KeyAgreement.PrivateKey]) throws -> (name: String, plaintext: Data) {
+        do {
+            return try LockedFile.open(data, masterKey: master)
+        } catch LockedFileError.authenticationFailed {
+            for key in paired {
+                if let opened = try? LockedFile.open(data, recoveryPrivateKey: key) { return opened }
+            }
+            throw LockedFileError.authenticationFailed
+        }
     }
 
     func cancelToHome() {

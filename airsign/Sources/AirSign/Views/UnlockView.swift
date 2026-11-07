@@ -37,7 +37,10 @@ struct UnlockView: View {
         }
         // A sheet keeps the Space shortcut away from the code field.
         .sheet(isPresented: $showRecovery) {
-            RecoveryEntrySheet { model.submitRecoveryCode($0) }
+            // Pairing needs this Mac's own signature to guard the stored key, so only enrolled Macs offer it.
+            RecoveryEntrySheet(canRemember: model.profile != nil && model.screen == .unlock) {
+                model.submitRecoveryCode($0, rememberOnThisMac: $1)
+            }
         }
     }
 }
@@ -45,7 +48,9 @@ struct UnlockView: View {
 private struct RecoveryEntrySheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var code = ""
-    var onSubmit: (String) -> Void
+    @State private var remember = false
+    var canRemember: Bool
+    var onSubmit: (String, Bool) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -55,6 +60,11 @@ private struct RecoveryEntrySheet: View {
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 460)
                 .onSubmit(submit)
+            if canRemember {
+                Toggle("Remember on this Mac: pair it with the Mac that locked this file, so your AirPods and signature open its files here next time",
+                       isOn: $remember)
+                    .frame(width: 460, alignment: .leading)
+            }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
@@ -67,7 +77,7 @@ private struct RecoveryEntrySheet: View {
     }
 
     private func submit() {
-        onSubmit(code)
+        onSubmit(code, canRemember && remember)
         dismiss()
     }
 }
