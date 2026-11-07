@@ -113,15 +113,19 @@ def build(records: list[M.Logged]) -> Data:
 
 # ---------- scoring ----------
 
-def reference(alg, templates: list) -> float:
-    """The templates' own spread under this algorithm: threshold = factor × reference."""
-    if getattr(alg, "self_normalized", False):
+def reference(alg, templates: list, normalized: bool | None = None) -> float:
+    """The templates' own spread under this algorithm: threshold = factor × reference.
+
+    A self-normalized score (already divided by the templates' spread) has reference 1, so its
+    threshold is the factor itself. `normalized` overrides the function's `self_normalized` mark.
+    """
+    if normalized if normalized is not None else getattr(alg, "self_normalized", False):
         return 1.0
     ts = templates
     return max(alg(ts[i], [ts[j]]) for i in range(len(ts)) for j in range(i + 1, len(ts)))
 
 
-def ratios(alg, cases: list[Case]) -> list[float]:
+def ratios(alg, cases: list[Case], normalized: bool | None = None) -> list[float]:
     """score ÷ reference per case; inf when gate 1 rejects (or the score is undefined)."""
     refs: dict[str, float] = {}
     out = []
@@ -130,7 +134,7 @@ def ratios(alg, cases: list[Case]) -> list[float]:
             out.append(math.inf)
             continue
         if c.key not in refs:
-            refs[c.key] = max(reference(alg, list(c.templates)), 1e-9)
+            refs[c.key] = max(reference(alg, list(c.templates), normalized), 1e-9)
         s = alg(c.rec, list(c.templates))
         out.append(s / refs[c.key] if math.isfinite(s) else math.inf)
     return out
