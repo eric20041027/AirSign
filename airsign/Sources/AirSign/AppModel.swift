@@ -55,8 +55,14 @@ final class AppModel: ObservableObject {
     private var timer: Timer?
 
     private enum IdentityPurpose {
-        case changeSignature, openLab
+        case changeSignature, changeSignatureFromLab, openLab, enableDemo
+
+        /// One lucky imitation must not be enough to replace the owner's signature.
+        var needsRecoveryCode: Bool { self == .changeSignature || self == .changeSignatureFromLab }
     }
+
+    /// True while the identity screen accepts only the recovery code.
+    @Published private(set) var identityNeedsCode = false
 
     var demoMode: Bool { profile?.demoMode ?? true }
 
@@ -141,6 +147,15 @@ final class AppModel: ObservableObject {
         }
         if screen == .enroll, AudioDeviceIdentity.headphoneUID() == nil {
             say("Set the sound output to your AirPods (Control Center → Sound), then enroll.", .bad)
+            return
+        }
+        // No signing at all without the enrolled AirPods as output, so no score can leak from an uncounted try.
+        if screen != .enroll, profile?.enrollment.deviceUID != nil, AudioDeviceIdentity.headphoneUID() == nil {
+            say("Set the sound output to your AirPods (Control Center → Sound), then sign.", .bad)
+            return
+        }
+        if screen == .confirmIdentity, identityNeedsCode {
+            say("Changing the signature needs the recovery code: use “Use recovery code…”.", .warn)
             return
         }
         if screen == .lab, testTester.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -249,7 +264,8 @@ final class AppModel: ObservableObject {
             }
             let code = RecoveryCode.generate()
             let recoveryKey = try RecoveryCode.privateKey(for: code).publicKey.rawRepresentation
-            pendingProfile = Profile(enrollment: enrollment, recoveryPublicKey: recoveryKey, lockout: Lockout(), demoMode: true)
+            // Demo mode shows scores, so it starts off and turning it on needs the owner.
+            pendingProfile = Profile(enrollment: enrollment, recoveryPublicKey: recoveryKey, lockout: Lockout(), demoMode: false)
             recoveryCodeToShow = code
             say("Write down your recovery code. Your signature is saved when you confirm.", .good)
         } catch {
@@ -298,11 +314,12 @@ final class AppModel: ObservableObject {
         }
         let verdict = verify(signature, deviceUID: AudioDeviceIdentity.headphoneUID(), against: current.enrollment,
                              threshold: thresholdOverride)
-        lastVerdict = verdict
         if verdict.rejection == .deviceUnknown {
+            lastVerdict = nil
             say(Self.describe(verdict), .warn)
             return
         }
+        lastVerdict = verdict
         guard verdict.accepted else {
             adjustLockout(.failure)
             say(current.demoMode ? Self.describe(verdict) : "Not recognized.", .bad)
@@ -400,6 +417,7 @@ final class AppModel: ObservableObject {
 
     func cancelToHome() {
         stopCapture()
+        identityNeedsCode = false
         isReenrolling = false
         returnToLabAfterEnroll = false
         clearEnrollment()
@@ -442,7 +460,7 @@ final class AppModel: ObservableObject {
     // MARK: - Proving identity (change signature, open the test lab)
 
     func beginChangeSignature() {
-        beginIdentityCheck(.changeSignature, prompt: "First prove it's you: sign with your current signature, or use the recovery code.")
+        beginIdentityCheck(.changeSignature, prompt: "Changing your signature needs your recovery code: press “Use recovery code…”.")
     }
 
     func beginLab() {
@@ -453,6 +471,7 @@ final class AppModel: ObservableObject {
     private func beginIdentityCheck(_ purpose: IdentityPurpose, prompt: String) {
         stopCapture()
         identityPurpose = purpose
+        identityNeedsCode = purpose.needsRecoveryCode
         lastVerdict = nil
         livePath = []
         screen = .confirmIdentity
@@ -461,9 +480,13 @@ final class AppModel: ObservableObject {
 
     private func confirmIdentity(_ signature: Signature) {
         guard let current = profile else { return }
+        guard !identityNeedsCode else {
+            say("Changing the signature needs the recovery code: use “Use recovery code…”.", .warn)
+            return
+        }
         // Never the demo slider here: proving identity always uses the enrolled threshold.
         let verdict = verify(signature, deviceUID: AudioDeviceIdentity.headphoneUID(), against: current.enrollment)
-        lastVerdict = verdict
+        lastVerdict = verdict.rejection == .deviceUnknown ? nil : verdict
         if verdict.rejection == .deviceUnknown {
             say(Self.describe(verdict), .warn)
         } else if verdict.accepted {
@@ -476,14 +499,26 @@ final class AppModel: ObservableObject {
     }
 
     private func identityConfirmed() {
+        identityNeedsCode = false
         switch identityPurpose {
         case .changeSignature:
             startReenrollment(returningToLab: false)
+        case .changeSignatureFromLab:
+            startReenrollment(returningToLab: true)
         case .openLab:
             lastVerdict = nil
             livePath = []
             screen = .lab
             say("Test lab open. Pick the tester and scenario, then press Space.", .good)
+        case .enableDemo:
+            if var current = profile {
+                current.demoMode = true
+                persist(current)
+            }
+            lastVerdict = nil
+            livePath = []
+            screen = .home
+            say("Demo mode on: scores, lights and reasons are shown.", .good)
         }
     }
 
@@ -502,7 +537,7 @@ final class AppModel: ObservableObject {
     /// The owner re-enrolls from inside the lab so the templates' raw motion is logged too.
     func reenrollOwnerFromLab() {
         guard testMode, screen == .lab else { return }
-        startReenrollment(returningToLab: true)
+        beginIdentityCheck(.changeSignatureFromLab, prompt: "Re-enrolling the owner needs the recovery code: press “Use recovery code…”.")
     }
 
     func labCount(for scenario: TestScenario) -> Int {
@@ -519,6 +554,11 @@ final class AppModel: ObservableObject {
             return
         }
         let verdict = verify(signature, deviceUID: AudioDeviceIdentity.headphoneUID(), against: current.enrollment)
+        if verdict.rejection == .deviceUnknown {
+            lastVerdict = nil
+            say(Self.describe(verdict), .warn)
+            return
+        }
         lastVerdict = verdict
         var labels = currentLabels(scenario: testScenario)
         labels.enrollment = current.enrollment.fingerprint
@@ -556,11 +596,16 @@ final class AppModel: ObservableObject {
 
     // MARK: - Settings
 
+    /// Turning demo mode off is free; turning it on needs the owner, since it shows scores.
     func setDemoMode(_ on: Bool) {
-        guard var current = profile else { return }
-        current.demoMode = on
+        guard var current = profile, on != current.demoMode else { return }
+        if on {
+            beginIdentityCheck(.enableDemo, prompt: "Turning demo mode on shows scores: sign once, or use the recovery code.")
+            return
+        }
+        current.demoMode = false
         persist(current)
-        if !on { thresholdOverride = nil }
+        thresholdOverride = nil
     }
 
     // MARK: - Helpers

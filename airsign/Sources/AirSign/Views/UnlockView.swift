@@ -28,8 +28,10 @@ struct UnlockView: View {
                 isCapturing: model.isCapturing
             )
             HStack {
-                CaptureButton()
-                    .disabled(model.profile == nil || model.lockoutRemaining != nil)
+                if !model.identityNeedsCode {
+                    CaptureButton()
+                        .disabled(model.profile == nil || model.lockoutRemaining != nil)
+                }
                 Button("Use recovery code…") { showRecovery = true }
                 Spacer()
                 Button("Cancel") { model.cancelToHome() }

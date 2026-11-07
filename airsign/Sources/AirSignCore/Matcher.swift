@@ -2,7 +2,8 @@ import Foundation
 
 public enum MatcherConfig {
     public static let durationWeight = 0.5
-    /// From spike round 2: 1.2× the worst enrolled pair separated owner 10/10 from imitators 14/15.
+    /// docs/tuning.md on the spike data: at 1.25 the owner passed 35/38 and imitators 1/23 across both rounds.
+    /// Tonight's test-lab data (docs/evaluation.md) decides the final value.
     public static let thresholdFactor = 1.25
     public static let enrollCount = 3
     public static let band = 0.25
