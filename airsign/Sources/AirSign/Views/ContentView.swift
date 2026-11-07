@@ -6,6 +6,7 @@ struct ContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if model.testMode { TestModeBanner() }
             HStack {
                 Text("AirSign").font(.largeTitle.bold())
                 Spacer()
@@ -18,6 +19,7 @@ struct ContentView: View {
                     switch model.screen {
                     case .enroll: EnrollView()
                     case .unlock, .confirmIdentity: UnlockView()
+                    case .lab: TestLabView()
                     case .home: HomeView()
                     }
                 }
