@@ -66,14 +66,14 @@ S1、S2、S3 的 A1 結果放在一起比較，就能知道**睡醒後本人的�
 
 | # | 測試 | 怎麼做 | 預期結果 | 實際結果 | 誰／何時 |
 |---|---|---|---|---|---|
-| B1 | 換一台電腦開檔 | 把 Mac 1 上鎖的 `.airsign` 用 AirDrop 傳到 Mac 2，用 B 的簽名解鎖 | 打不開，顯示「locked on another Mac」 | | |
+| B1 | 換一台電腦開檔 | 把 Mac 1 上鎖的 `.airsign` 用 AirDrop 傳到 Mac 2，用 B 的簽名解鎖 | 打不開，顯示「locked on another Mac」 | 通過：簽名通過（score 0.439 vs 0.700），但因本機無對應金鑰而拒絕解鎖，顯示 `locked on another Mac. Use that Mac's recovery code.` | Leo (Mac 2) / 11-07 16:43 ET |
 | B2 | 救援碼 | 接著在 Mac 2 用 Eric 的救援碼解鎖 | 打得開，內容一樣 | | |
-| B3 | 竄改檔案 | `printf '\x00' \| dd of=測試檔.airsign bs=1 seek=400 conv=notrunc` 改掉一個位元組，再解鎖 | 拒絕打開 | | |
-| B4 | 暴力嘗試 | 用正常方式開啟（不是測試模式），模仿者連續解鎖失敗 5 次 | 出現 5 分鐘倒數 | | |
-| B5 | 假檔案不能重設次數 | 把任意檔案改名成 `x.airsign`，在倒數前用救援碼試它 | 失敗次數不會被歸零 | | |
-| B6 | 刪除設定檔 | 刪掉 `~/Library/Application Support/AirSign/profile.bin`，重新註冊 | 舊的 `.airsign` 只能用救援碼開 | | |
-| B7 | 聲音輸出不是 AirPods | 把聲音輸出切到 Mac 喇叭後簽名 | 顯示「不計入」，不能解鎖 | | |
-| B8 | 沒有網路連線 | AirSign 開著時執行 `lsof -i -a -p $(pgrep -f AirSign.app/Contents/MacOS/AirSign)` | 沒有任何輸出 | | |
+| B3 | 竄改檔案 | `printf '\x00' \| dd of=測試檔.airsign bs=1 seek=400 conv=notrunc` 改掉一個位元組，再解鎖 | 拒絕打開 | 通過：以 `dd` 竄改第 400 byte 後，AES-GCM 驗證失敗，拒絕解鎖還原 | Leo (Mac 2) / 11-07 17:23 ET |
+| B4 | 暴力嘗試 | 用正常方式開啟（不是測試模式），模仿者連續解鎖失敗 5 次 | 出現 5 分鐘倒數 | 通過：一般模式下連續失敗達 5 次後，按鈕鎖定並顯示 `Too many tries. Try again in 281 s.` | Leo (Mac 2) / 11-07 17:31 ET |
+| B5 | 假檔案不能重設次數 | 把任意檔案改名成 `x.airsign`，在倒數前用救援碼試它 | 失敗次數不會被歸零 | 通過：先失敗 4 次後對 `fake.airsign` 送出救援碼（顯示 `not a valid .airsign file`），再失敗 1 次即立刻觸發 5 分鐘鎖定，確認計數未歸零 | Leo (Mac 2) / 11-07 17:31 ET |
+| B6 | 刪除設定檔 | 刪掉 `~/Library/Application Support/AirSign/profile.bin`，重新註冊 | 舊的 `.airsign` 只能用救援碼開 | 通過：刪除 `profile.bin` 重新註冊 3 次後，`masterKey` 已輪替，舊的 `MakeUC.pdf.airsign` 無法以新簽名直接打開，需使用原救援碼 | Leo (Mac 2) / 11-07 17:43 ET |
+| B7 | 聲音輸出不是 AirPods | 把聲音輸出切到 Mac 喇叭後簽名 | 顯示「不計入」，不能解鎖 | 通過：切到 MacBook Air 喇叭後簽名，拒絕解鎖並顯示 `Set the sound output to your AirPods (Control Center → Sound), then sign again. This try was not counted.` | Leo (Mac 2) / 11-07 17:25 ET |
+| B8 | 沒有網路連線 | AirSign 開著時執行 `lsof -i -a -p $(pgrep -f AirSign.app/Contents/MacOS/AirSign)` | 沒有任何輸出 | 通過：對執行中的 AirSign (PID 26001) 執行 `lsof -i -a -p 26001`，完全無輸出（0 個網路連線） | Leo (Mac 2) / 11-07 17:15 ET |
 
 ## 資料怎麼交給 C
 
