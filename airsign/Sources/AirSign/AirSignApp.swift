@@ -6,14 +6,18 @@ struct AirSignApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        WindowGroup("AirSign") {
-            Text("AirSign")
-                .frame(minWidth: 480, minHeight: 320)
+        Window("AirSign", id: "main") {
+            ContentView()
+                .environmentObject(appDelegate.model)
         }
+        .windowResizability(.contentMinSize)
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    lazy var model = AppModel()
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         if CommandLine.arguments.contains("--selftest-keychain") {
             runKeychainSelfTest()
@@ -21,6 +25,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--probe") {
             ProbeMode.run()
         }
+    }
+
+    /// Double-clicking an `.airsign` file or `open -a AirSign <file>` arrives here.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        model.handleOpen(urls)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
     }
 
     // Proves the Keychain item written by one build is readable by the next build without a prompt.
