@@ -15,11 +15,16 @@ python -m unittest discover -s .
 python tune.py /path/outside/repo/sessions --report ../../docs/tuning.md
 ```
 
-To replay the plan's round-2 split:
+The two fair rounds from 2026-11-07, each with its own 3 templates (this produced `docs/tuning.md`):
 
 ```bash
-python tune.py /path/outside/repo/sessions --templates 20261107-144527-280,20261107-144533-012,20261107-144616-034 --from 20261107-144617 --to 20261107-145000
+python tune.py /path/outside/repo/sessions \
+  --round "Round 1" 20261107-143432-081,20261107-143437-789,20261107-143444-477 20261107-143445 20261107-144241 \
+  --round "Round 2" 20261107-144527-280,20261107-144533-012,20261107-144616-034 20261107-144617 20261107-145000
 ```
+
+One setting is picked for all rounds: every round must reach the owner target,
+then the fewest imitators accepted wins, then the fewest Swift constants changed.
 
 - `--quick` runs a small grid for a dry run.
 - `--owner-min 0.9` is the owner acceptance target.
