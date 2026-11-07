@@ -134,72 +134,154 @@ class TuneTests(unittest.TestCase):
         self.assertEqual(len(w), len(set(w)))
 
 
-class EvaluationTests(unittest.TestCase):
+def logged(scenario, session="S1-tonight", owner="O", mode="verify", enrollment="fp1", loc="right", rid="x",
+           rejection=None, n=40, seed=0, shape=None):
+    rows = synth.rows_for(shape or synth.owner_shape, n, 0.2, (0, 0.7, -0.7), np.random.default_rng(seed))
+    return M.Logged(rid, mode, "genuine", loc, rows, scenario=scenario, session=session, owner=owner,
+                    enrollment=enrollment, rejection=rejection, accepted=None if mode == "enroll" else True)
+
+
+def case(scenario, session="S1-tonight", owner="O"):
+    return E.Case(logged(scenario, session, owner), (), "fp1", "right")
+
+
+class ProtocolV2Tests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.dir = Path(cls.tmp.name)
-        synth.make_test_logs(cls.dir, np.random.default_rng(11), owner_n=5, imit_n=(2, 2, 3), a5_n=1, unknown_n=1,
-                             sessions=("S1-tonight", "S2-midnight"))
-        cls.records = M.load_logs([cls.dir / "mac1", cls.dir / "mac2"])
-        cls.data = E.build(cls.records)
+        synth.make_test_logs(cls.dir, np.random.default_rng(11), owner_n=6, imit_n=(2, 2), a4_n=(3, 2), a5_n=1,
+                             unknown_n=1)
+        cls.data = E.load([cls.dir / "mac1", cls.dir / "mac2"])
 
     @classmethod
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
-    def test_groups_by_enrollment_and_drops_device_unknown(self):
-        self.assertEqual(len(self.data.groups), 4)  # 2 Macs x 2 sessions
-        self.assertEqual(self.data.dropped_device_unknown, 4)
-        self.assertTrue(all(len(g.templates) == 3 for g in self.data.groups))
-        ids = [r.id for r in self.records]
-        self.assertEqual(len(ids), len(set(ids)))
-        self.assertTrue(all(r.id.startswith(("mac1/", "mac2/")) for r in self.records))
+    def test_every_attempt_uses_its_owners_s1_templates(self):
+        keys = {}
+        for c in self.data.cases:
+            keys.setdefault(c.rec.owner, set()).add(c.key)
+            self.assertEqual(c.templates[0].session, E.S1)
+        self.assertEqual({o: len(k) for o, k in keys.items()}, {"Eric": 1, "B": 1})
+        self.assertEqual(self.data.dropped_device_unknown, 2)
+        self.assertEqual(self.data.reenrolled_after_s1, 0)
+        self.assertEqual({c.rec.session for c in self.data.cases}, {E.S1, E.S2, E.S3})
 
-    def test_replay_matches_logged_scores_at_rotation_3(self):
-        match = E.app_match(self.data)
-        self.assertLess(match[E.SETTINGS[0].name], 1e-3)
-        self.assertGreater(match[E.SETTINGS[1].name], 1e-3)
+    def test_later_reenrollment_is_counted_but_scored_against_s1(self):
+        recs = [logged(E.OWNER, mode="enroll", enrollment="s1", rid=f"e{i}", seed=i) for i in range(3)]
+        recs += [logged(E.OWNER, E.S2, mode="enroll", enrollment="s2", rid=f"f{i}", seed=9 + i) for i in range(3)]
+        recs += [logged(E.OWNER, E.S2, enrollment="s2", rid="v")]
+        data = E.build(recs)
+        self.assertEqual(data.reenrolled_after_s1, 1)
+        self.assertEqual(data.cases[0].key, "s1")
 
-    def test_gate1_scenarios_are_never_accepted(self):
-        scored = E.score_all(self.data, E.SETTINGS[0])
-        a5 = [s for s in scored if s.rec.scenario in E.GATE1]
-        self.assertEqual(len(a5), 2 * 4)
-        self.assertTrue(all(math.isinf(s.ratio) for s in a5))
+    def test_replay_matches_logged_scores_and_gate1_never_accepts(self):
+        import algorithms_ref as R
+        self.assertLess(E.app_match(self.data.cases, R.baseline), 1e-3)
+        rs = E.ratios(R.baseline, self.data.cases)
+        a5 = [r for c, r in zip(self.data.cases, rs) if c.rec.scenario in E.GATE1]
+        self.assertTrue(a5 and all(math.isinf(r) for r in a5))
 
-    def test_upper_bounds(self):
-        self.assertAlmostEqual(E.upper95(0, 100), 0.03)
-        self.assertAlmostEqual(E.exact_zero_bound(100), 0.0295, places=3)
-        self.assertAlmostEqual(E.upper95(1, 20), 0.2161, places=3)  # one-sided Clopper-Pearson
-        self.assertEqual(E.upper95(5, 5), 1.0)
+    def test_wilson(self):
+        lo, hi = E.wilson(0, 100)
+        self.assertEqual(lo, 0.0)
+        self.assertAlmostEqual(hi, 0.0370, places=3)  # the 3.7% in test-protocol.md
+        lo, hi = E.wilson(19, 20)
+        self.assertAlmostEqual(lo, 0.7639, places=3)
+        self.assertAlmostEqual(hi, 0.9911, places=3)
 
-    def test_eer(self):
-        self.assertEqual(E.eer([0.5, 0.8, 1.0], [2.0, 3.0, math.inf])[0], 0.0)
-        e, _ = E.eer([1.0, 2.0], [1.5, 3.0])
-        self.assertAlmostEqual(e, 0.5)
+    def test_s1_factor_uses_s1_owner_attempts_only(self):
+        cases = [case(E.OWNER) for _ in range(20)] + [case(E.OWNER, E.S2), case(E.A4)]
+        rs = [0.5] * 19 + [2.0] + [9.0, 0.1]
+        self.assertAlmostEqual(E.s1_factor(cases, rs), 0.6)  # 19/20 = 95% at 0.5, plus 0.10
+        rs[0] = math.inf
+        self.assertAlmostEqual(E.s1_factor(cases, rs), 2.1)  # now the 19th smallest is 2.0
 
-    def test_choose_most_secure_factor_with_owner_target(self):
-        def rec(scenario, owner="O", session="S1-tonight"):
-            return M.Logged("x", "verify", "genuine", "right", np.zeros((2, 14)), scenario=scenario, owner=owner,
-                            session=session)
-        owners = [E.Scored(rec(E.OWNER), r, 0) for r in [0.5] * 18 + [1.28, 1.28]]  # 95% needs factor 1.3
-        imitators = [E.Scored(rec("A4-skilled"), r, 0) for r in [1.12, 1.6, 2.5]]
-        c = E.choose(E.SETTINGS[0], owners + imitators)
-        self.assertTrue(c.feasible)
-        self.assertEqual(c.factor, 1.3)  # below 1.3 owners are at 90%; 1.3-1.55 let 1 imitator in, 1.3 is tightest
-        row = E.row_at(c, c.factor)
-        self.assertGreaterEqual(row["owner_min"], 0.95)
+    def test_mcnemar(self):
+        self.assertAlmostEqual(E.mcnemar_one_sided(7, 0), 1 / 128)
+        self.assertAlmostEqual(E.mcnemar_one_sided(9, 1), 11 / 1024)
+        self.assertEqual(E.mcnemar_one_sided(0, 0), 1.0)
 
-    def test_run_writes_report_and_charts(self):
+    def test_switch_rules(self):
+        import bakeoff as B
+        cases = ([case(E.OWNER, E.S2) for _ in range(20)] + [case(E.OWNER, E.S3) for _ in range(20)]
+                 + [case(E.A3) for _ in range(8)] + [case(E.A4, E.S3) for _ in range(4)])
+        base = B.Result("baseline", [0.5] * 40 + [1.0] * 7 + [3.0] * 5, 1.25, True)
+        good = B.Result("good", [0.5] * 40 + [3.0] * 12, 1.25, False)
+        rules = B.switch_rules(cases, base, good)
+        self.assertEqual([r.ok for r in rules], [True, True, True])  # 7:0 in its favour
+        six = B.Result("six", [0.5] * 40 + [3.0] * 6 + [1.0] + [3.0] * 5, 1.25, False)
+        self.assertFalse(B.switch_rules(cases, base, six)[2].ok)  # 6:0 isn't enough
+        no_s3 = [c for c in cases if c.rec.session != E.S3]
+        r = B.switch_rules(no_s3, B.Result("b", base.rs[:20] + base.rs[40:48], 1.25, True),
+                           B.Result("g", good.rs[:20] + good.rs[40:48], 1.25, False))
+        self.assertIsNone(r[1].ok)
+        self.assertEqual(B.verdict(r), "pending")
+
+    def test_reports_render(self):
         import xml.etree.ElementTree as ET
+        import bakeoff as B
         out = self.dir / "docs" / "evaluation.md"
         out.parent.mkdir(exist_ok=True)
-        E.run([self.dir / "mac1", self.dir / "mac2"], out)
+        E.run([self.dir / "mac1", self.dir / "mac2"], out, note="Discarded: 0")
         text = out.read_text(encoding="utf-8")
-        for heading in ("## Recommendation", "## Rotation 3 vs 1.5", "## Quotable", "## Charts"):
-            self.assertIn(heading, text)
+        for needle in ("## Frozen baseline", "Wilson 95%", "Disclosure", "S1 equal error rate", "Discarded: 0"):
+            self.assertIn(needle, text)
         for name in ("scores.svg", "acceptance.svg"):
             ET.parse(out.parent / "evaluation" / name)
+        algs, source = B.load_algorithms()
+        self.assertEqual(list(algs), ["baseline", *B.CHALLENGERS])
+        md = B.report(self.data, B.evaluate_all(self.data.cases, algs), source)
+        for needle in ("## Main table", "## Switch rule", "## Recommendation", "Disclosure", "A4 attack S3"):
+            self.assertIn(needle, md)
+
+
+class ReferenceAlgorithmTests(unittest.TestCase):
+    """algorithms_ref.py must give the same numbers as the prototype's quick_candidates.py."""
+
+    @classmethod
+    def setUpClass(cls):
+        import ast
+        src = (Path(__file__).parent / "quick_candidates.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        tree.body = [n for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom, ast.FunctionDef))]
+        cls.qc = {}
+        exec(compile(tree, "quick_candidates.py", "exec"), cls.qc)  # functions only; its script part needs argv
+        rng = np.random.default_rng(4)
+
+        def mk(shape, n, i):
+            return M.Attempt(f"a{i}", "enroll", "genuine", "right", synth.rows_for(shape, n, 0.3, (0, 0.7, -0.7), rng))
+
+        cls.T = [mk(synth.owner_shape, n, i) for i, n in enumerate((44, 47, 50))]
+        cls.v = mk(synth.forgery_shape, 46, 9)
+
+    def test_global_vec(self):
+        import algorithms_ref as R
+        np.testing.assert_allclose(R.global_vec(self.v.rows), self.qc["global_vec"](self.v.rows.tolist()),
+                                   rtol=1e-6, atol=1e-9)
+
+    def test_challenger_scores(self):
+        import algorithms_ref as R
+        q = self.qc
+
+        def dist(a, b, s=3.0):
+            return q["dtw"](q["feats"](a.rows.tolist(), s), q["feats"](b.rows.tolist(), s)) * q["dur_factor"](a.dur, b.dur)
+
+        d = [dist(self.v, t) for t in self.T]
+        e = [[dist(self.T[i], self.T[j]) if i != j else 0 for j in range(3)] for i in range(3)]
+        near = sum(min(e[i][j] for j in range(3) if j != i) for i in range(3)) / 3
+        far = sum(max(e[i][j] for j in range(3) if j != i) for i in range(3)) / 3
+        med = min(range(3), key=lambda i: sum(e[i]))
+        med_ref = sum(e[med][j] for j in range(3) if j != med) / 2
+        nfm = min(d) / max(near, 1e-3) + max(d) / max(far, 1e-3) + d[med] / max(med_ref, 1e-3)
+        self.assertAlmostEqual(R.normalized_nfm(self.v, self.T), nfm, places=6)
+        self.assertAlmostEqual(R.gyro_x2(self.v, self.T), min(dist(self.v, t, 1.5) for t in self.T), places=6)
+        tg = [q["global_vec"](t.rows.tolist()) for t in self.T]
+        loo = sum(q["std_distance"](tg[i], [tg[j] for j in range(3) if j != i]) for i in range(3)) / 3
+        worst = max(max(r) for r in e)
+        dpg = min(d) / worst + q["std_distance"](q["global_vec"](self.v.rows.tolist()), tg) / max(loo, 1e-3)
+        self.assertAlmostEqual(R.dtw_plus_global(self.v, self.T), dpg, places=5)
 
 
 if __name__ == "__main__":

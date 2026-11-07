@@ -312,7 +312,7 @@ def main() -> None:
         if not args.report:
             ap.error("--test-logs needs --report (the charts are written next to it)")
         import evaluate
-        evaluate.run(args.test_logs, args.report)
+        evaluate.run(args.test_logs, args.report, args.note)
         return
     if args.data is None:
         ap.error("give DATA_DIR or --test-logs")

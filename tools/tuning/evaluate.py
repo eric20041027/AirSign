@@ -1,16 +1,22 @@
-"""Evaluate the app's test-mode records (docs/test-protocol.md) and write docs/evaluation.md.
+"""Test protocol v2 analysis (docs/test-protocol.md, docs/algorithm-bakeoff.md): shared core plus docs/evaluation.md.
 
 Run through tune.py:
-  python tune.py --test-logs C:/airsign-data/test-logs-mac1 C:/airsign-data/test-logs-mac2 \
-      --report ../../docs/evaluation.md
+  python tune.py --test-logs C:/airsign-data/mac1 C:/airsign-data/mac2 --report ../../docs/evaluation.md
 
-Each verify record is replayed against the templates of its own enrollment (the
-enroll records with the same "enrollment" fingerprint), the way the Swift app
-does it, so thresholdFactor and FeatureScale.rotation can be changed after the fact.
+Rules this file encodes:
+- The baseline (the app today, thresholdFactor 1.25) is frozen and primary.
+- Owners enroll once, at the start of S1. Every attempt, S2 and S3 included, is scored
+  against the owner's S1 templates.
+- A tuned factor is chosen from S1 owner attempts only: the smallest factor with S1
+  owner acceptance ≥ 95%, plus 0.10. It is then applied unchanged to S2/S3.
+- Rates are reported per owner and scenario as k/n with Wilson 95% intervals.
+  A2 is the false accept rate (FAR); A3 and A4 are attacks, reported as attack
+  success rates (ISO/IEC 30107-3 style). EER is reported for S1 only.
 """
 from __future__ import annotations
 
 import math
+import statistics
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -20,138 +26,126 @@ from pathlib import Path
 import matcher as M
 import svgchart
 
-OWNER = "A1-owner"
-IMITATION = ["A2-zero-effort", "A3-watched-once", "A4-skilled"]
+OWNER, A2, A3, A4 = "A1-owner", "A2-zero-effort", "A3-watched-once", "A4-skilled"
+IMITATION = [A2, A3, A4]
 GATE1 = ["A5-other-bud", "A5-other-pair"]
 SCENARIOS = [OWNER, *IMITATION, *GATE1]
-SESSIONS = ["S1-tonight", "S2-midnight", "S3-morning", "S4-extra"]
+S1, S2, S3, S4 = "S1-tonight", "S2-midnight", "S3-morning", "S4-extra"
+SESSIONS = [S1, S2, S3, S4]
+LATER = [S2, S3, S4]
 GATE1_REJECTIONS = {"wrongBud", "wrongDevice"}
-OWNER_MIN = 0.95
-CURRENT_FACTOR = M.DEFAULT.threshold_factor
+FROZEN_FACTOR = M.DEFAULT.threshold_factor  # 1.25
+OWNER_TARGET = 0.95
+MARGIN = 0.10
+Z95 = 1.959964
+DISCLOSURE = ("Disclosure: C (teammate) was both an imitator in these tests and the person who wrote this analysis. "
+              "The baseline and its 1.25 factor were frozen and committed before any test data existed, and every "
+              "tuned factor uses S1 owner attempts only, never imitator data.")
 FACTORS = [round(1.0 + 0.05 * i, 2) for i in range(21)]
 
 
-@dataclass(frozen=True)
-class Setting:
-    name: str
-    weights: tuple[float, float, float]  # gyro, acc, grav
-    rotation_scale: float
-
-
-SETTINGS = [Setting("FeatureScale.rotation = 3 (today)", (1.0, 1.0, 1.0), 3.0),
-            Setting("FeatureScale.rotation = 1.5", (1.0, 0.5, 0.5), 1.5)]
-
+# ---------- data ----------
 
 @dataclass
-class Group:
-    enrollment: str
-    owner: str
-    side: str
-    templates: list[M.Logged]
-    attempts: list[M.Logged]
-
-
-@dataclass
-class Scored:
+class Case:
     rec: M.Logged
-    ratio: float  # score ÷ worst template pair; accepted at factor f when ratio <= f; inf when gate 1 rejects
-    score: float
+    templates: tuple  # the owner's S1 enroll records
+    key: str  # their enrollment fingerprint
+    side: str
+
+    @property
+    def gate1(self) -> bool:
+        return self.rec.rejection in GATE1_REJECTIONS or self.rec.loc != self.side
 
 
 @dataclass
 class Data:
-    groups: list[Group]
+    cases: list[Case]
     dropped_device_unknown: int = 0
-    not_replayable: list[M.Logged] = field(default_factory=list)  # enrollment never logged
+    not_replayable: int = 0
+    reenrolled_after_s1: int = 0  # later records whose own enrollment wasn't the owner's S1 one
     unknown_scenario: int = 0
+    sample_rates: dict[str, float] = field(default_factory=dict)
 
 
-# ---------- grouping and replay ----------
+def _folder(rec_id: str) -> str:
+    return rec_id.split("/", 1)[0] if "/" in rec_id else "all"
+
 
 def build(records: list[M.Logged]) -> Data:
-    enrolls, verifies = defaultdict(list), defaultdict(list)
-    data = Data(groups=[])
+    enrolls: dict[str, list[M.Logged]] = defaultdict(list)
+    s1_by_owner: dict[str, list[str]] = defaultdict(list)
     for r in records:
         if r.mode == "enroll":
             enrolls[r.enrollment].append(r)
-        elif r.rejection == "deviceUnknown":
-            data.dropped_device_unknown += 1
-        elif r.scenario not in SCENARIOS:
-            data.unknown_scenario += 1
-        else:
-            verifies[r.enrollment].append(r)
-    for fp, attempts in verifies.items():
-        templates = enrolls.get(fp, [])
-        sides = {t.loc for t in templates}
-        if len(templates) < 2 or len(sides) != 1:
-            data.not_replayable += attempts
+            if r.session == S1 and r.enrollment not in s1_by_owner[r.owner]:
+                s1_by_owner[r.owner].append(r.enrollment)
+    data = Data(cases=[])
+    rates = defaultdict(list)
+    for r in records:
+        if r.dur > 0:
+            rates[_folder(r.id)].append((len(r.rows) - 1) / r.dur)
+        if r.mode != "verify":
             continue
-        data.groups.append(Group(fp, templates[0].owner or attempts[0].owner, templates[0].loc, templates, attempts))
-    data.groups.sort(key=lambda g: (g.owner, g.templates[0].id))
+        if r.rejection == "deviceUnknown":
+            data.dropped_device_unknown += 1
+            continue
+        if r.scenario not in SCENARIOS:
+            data.unknown_scenario += 1
+            continue
+        s1 = s1_by_owner.get(r.owner, [])
+        if r.session == S1 and r.enrollment in s1:
+            fp = r.enrollment
+        elif s1:
+            fp = s1[-1]
+            if r.session != S1 and r.enrollment != fp:
+                data.reenrolled_after_s1 += 1
+        else:
+            fp = r.enrollment
+        templates = enrolls.get(fp, [])
+        if len(templates) < 2 or len({t.loc for t in templates}) != 1:
+            data.not_replayable += 1
+            continue
+        data.cases.append(Case(r, tuple(templates), fp, templates[0].loc))
+    data.sample_rates = {k: statistics.median(v) for k, v in sorted(rates.items())}
     return data
 
 
-def score_group(g: Group, weights, band: float = M.DEFAULT.band, dw: float = M.DEFAULT.duration_weight) -> list[Scored]:
-    feats = {r.id: M.features(r.rows, weights) for r in g.templates + g.attempts}
+# ---------- scoring ----------
 
-    def dist(a: M.Logged, b: M.Logged) -> float:  # Swift order: distance(sig, template)
-        return M.dtw(feats[a.id], feats[b.id], band) * M.duration_factor(a.dur, b.dur, dw)
+def reference(alg, templates: list) -> float:
+    """The templates' own spread under this algorithm: threshold = factor × reference."""
+    if getattr(alg, "self_normalized", False):
+        return 1.0
+    ts = templates
+    return max(alg(ts[i], [ts[j]]) for i in range(len(ts)) for j in range(i + 1, len(ts)))
 
-    ts = g.templates
-    worst = max(dist(ts[i], ts[j]) for i in range(len(ts)) for j in range(i + 1, len(ts)))
-    worst = max(worst, 1e-9)
+
+def ratios(alg, cases: list[Case]) -> list[float]:
+    """score ÷ reference per case; inf when gate 1 rejects (or the score is undefined)."""
+    refs: dict[str, float] = {}
     out = []
-    for a in g.attempts:
-        score = min(dist(a, t) for t in ts)
-        gate1 = a.rejection in GATE1_REJECTIONS or a.loc != g.side
-        out.append(Scored(a, math.inf if gate1 else score / worst, score))
+    for c in cases:
+        if c.gate1:
+            out.append(math.inf)
+            continue
+        if c.key not in refs:
+            refs[c.key] = max(reference(alg, list(c.templates)), 1e-9)
+        s = alg(c.rec, list(c.templates))
+        out.append(s / refs[c.key] if math.isfinite(s) else math.inf)
     return out
-
-
-def score_all(data: Data, setting: Setting) -> list[Scored]:
-    return [s for g in data.groups for s in score_group(g, setting.weights)]
 
 
 # ---------- statistics ----------
 
-def upper95(k: int, n: int) -> float:
-    """One-sided 95% upper bound on a rate: the rule of three (3/n) when k = 0, exact Clopper-Pearson otherwise."""
+def wilson(k: int, n: int, z: float = Z95) -> tuple[float, float]:
     if n == 0:
-        return math.nan
-    if k == 0:
-        return min(1.0, 3 / n)
-    if k >= n:
-        return 1.0
-
-    def cdf(p: float) -> float:
-        return sum(math.comb(n, i) * p ** i * (1 - p) ** (n - i) for i in range(k + 1))
-
-    lo, hi = k / n, 1.0
-    for _ in range(60):
-        mid = (lo + hi) / 2
-        lo, hi = (mid, hi) if cdf(mid) > 0.05 else (lo, mid)
-    return hi
-
-
-def exact_zero_bound(n: int) -> float:
-    return 1 - 0.05 ** (1 / n) if n else math.nan
-
-
-def eer(owner: list[float], imitator: list[float]) -> tuple[float, float]:
-    """Equal error rate and the factor where false accepts ≈ false rejects."""
-    o = [x for x in owner]
-    f = [x for x in imitator if math.isfinite(x)]
-    if not o or not imitator:
         return math.nan, math.nan
-    best = (math.inf, math.nan, math.nan)
-    cands = sorted({0.0, *[x for x in o if math.isfinite(x)], *f})
-    for t in cands + [cands[-1] * 1.001 + 1e-9]:
-        frr = sum(x > t for x in o) / len(o)
-        far = sum(x <= t for x in imitator) / len(imitator)
-        gap = abs(far - frr)
-        if gap < best[0]:
-            best = (gap, (far + frr) / 2, t)
-    return best[1], best[2]
+    p = k / n
+    den = 1 + z * z / n
+    mid = (p + z * z / (2 * n)) / den
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / den
+    return max(0.0, mid - half), min(1.0, mid + half)
 
 
 @dataclass
@@ -163,246 +157,244 @@ class Rate:
     def rate(self) -> float:
         return self.k / self.n if self.n else math.nan
 
+    @property
+    def ci(self) -> tuple[float, float]:
+        return wilson(self.k, self.n)
+
     def __str__(self) -> str:
-        return f"{self.k}/{self.n} ({self.rate:.0%})" if self.n else "–"
+        if not self.n:
+            return "–"
+        lo, hi = self.ci
+        return f"{self.k}/{self.n} ({pct(lo)}–{pct(hi)})"
+
+    def __add__(self, other: "Rate") -> "Rate":
+        return Rate(self.k + other.k, self.n + other.n)
 
 
-def accept(scored: list[Scored], factor: float, pred) -> Rate:
-    sel = [s for s in scored if pred(s.rec)]
-    return Rate(sum(s.ratio <= factor for s in sel), len(sel))
+def pct(x: float) -> str:
+    if x is None or math.isnan(x):
+        return "–"
+    return f"{x * 100:.0f}%" if x == 0 or x == 1 or x >= 0.1 else f"{x * 100:.1f}%"
 
 
-def owner_cells(scored: list[Scored]) -> list[tuple[str, str]]:
-    return sorted({(s.rec.owner, s.rec.session) for s in scored if s.rec.scenario == OWNER},
-                  key=lambda c: (c[0], SESSIONS.index(c[1]) if c[1] in SESSIONS else 99, c[1]))
+def rate(cases: list[Case], rs: list[float], factor: float, pred) -> Rate:
+    sel = [r for c, r in zip(cases, rs) if pred(c.rec)]
+    return Rate(sum(r <= factor for r in sel), len(sel))
 
 
-@dataclass
-class Choice:
-    setting: Setting
-    scored: list[Scored]
-    factor: float
-    feasible: bool  # every owner/session >= OWNER_MIN
-    sweep: list[dict]
-    eer: float
-    eer_factor: float
+def is_(scenario: str, sessions=None, owner: str | None = None):
+    def pred(rec: M.Logged) -> bool:
+        return (rec.scenario == scenario and (sessions is None or rec.session in sessions)
+                and (owner is None or rec.owner == owner))
+    return pred
 
 
-def sweep_row(scored: list[Scored], f: float) -> dict:
-    cells = owner_cells(scored)
-    per = {c: accept(scored, f, lambda r, c=c: r.scenario == OWNER and (r.owner, r.session) == c) for c in cells}
-    imit = accept(scored, f, lambda r: r.scenario in IMITATION)
-    return {
-        "factor": f,
-        "owner_cells": per,
-        "owner_min": min((r.rate for r in per.values()), default=math.nan),
-        "owner": accept(scored, f, lambda r: r.scenario == OWNER),
-        "imitators": imit,
-        **{sc: accept(scored, f, lambda r, sc=sc: r.scenario == sc) for sc in IMITATION + GATE1},
-    }
+def s1_factor(cases: list[Case], rs: list[float]) -> float | None:
+    """Smallest factor with S1 owner acceptance ≥ 95%, plus the 0.10 margin. Owner data only."""
+    owner = sorted(r for c, r in zip(cases, rs) if c.rec.scenario == OWNER and c.rec.session == S1)
+    if not owner:
+        return None
+    need = math.ceil(OWNER_TARGET * len(owner) - 1e-9)
+    f0 = owner[need - 1]
+    return f0 + MARGIN if math.isfinite(f0) else None
 
 
-def choose(setting: Setting, scored: list[Scored]) -> Choice:
-    """Most secure factor that keeps every owner/session at >= OWNER_MIN."""
-    sweep = [sweep_row(scored, f) for f in FACTORS]
-    ok = [r for r in sweep if r["owner_min"] >= OWNER_MIN - 1e-9]
-    if ok:
-        best = min(ok, key=lambda r: (r["imitators"].k, -r["owner"].k, r["factor"]))
-    else:  # nothing reaches the target: keep owners as high as possible
-        best = max(sweep, key=lambda r: (_nz(r["owner_min"]), -r["imitators"].k, -r["factor"]))
-    owner = [s.ratio for s in scored if s.rec.scenario == OWNER]
-    imit = [s.ratio for s in scored if s.rec.scenario in IMITATION]
-    e, ef = eer(owner, imit)
-    return Choice(setting, scored, best["factor"], bool(ok), sweep, e, ef)
+def eer(owner: list[float], imitator: list[float]) -> tuple[float, float]:
+    """Equal error rate and the factor where false accepts ≈ false rejects."""
+    if not owner or not imitator:
+        return math.nan, math.nan
+    cands = sorted({0.0, *[x for x in owner + imitator if math.isfinite(x)]})
+    best = (math.inf, math.nan, math.nan)
+    for t in cands + [cands[-1] * 1.001 + 1e-9]:
+        frr = sum(x > t for x in owner) / len(owner)
+        far = sum(x <= t for x in imitator) / len(imitator)
+        if abs(far - frr) < best[0]:
+            best = (abs(far - frr), (far + frr) / 2, t)
+    return best[1], best[2]
 
 
-def _nz(x: float) -> float:
-    return -1.0 if math.isnan(x) else x
+def s1_eer(cases: list[Case], rs: list[float]) -> tuple[float, float]:
+    owner = [r for c, r in zip(cases, rs) if c.rec.scenario == OWNER and c.rec.session == S1]
+    imit = [r for c, r in zip(cases, rs) if c.rec.scenario in IMITATION and c.rec.session == S1]
+    return eer(owner, imit)
 
 
-def pick(choices: list[Choice]) -> Choice:
-    """Feasible first, then fewer imitators accepted, more owners, then today's code."""
-    def key(c: Choice):
-        row = next(r for r in c.sweep if r["factor"] == c.factor)
-        return (not c.feasible, row["imitators"].k, -row["owner"].k, -_nz(row["owner_min"]), choices.index(c))
-    return min(choices, key=key)
+def auc(owner: list[float], imitator: list[float]) -> float:
+    if not owner or not imitator:
+        return math.nan
+    wins = sum((f > o) + 0.5 * (f == o) for f in imitator for o in owner)
+    return wins / (len(owner) * len(imitator))
 
 
-def app_match(data: Data) -> dict[str, float]:
-    """Median relative gap between the app's logged score and the Python replay, per setting."""
-    out = {}
-    for setting in SETTINGS:
-        gaps = []
-        for s in score_all(data, setting):
-            if s.rec.score is not None and s.rec.score > 0 and math.isfinite(s.score):
-                gaps.append(abs(s.score - s.rec.score) / s.rec.score)
-        gaps.sort()
-        out[setting.name] = gaps[len(gaps) // 2] if gaps else math.nan
+def mcnemar_one_sided(b: int, c: int) -> float:
+    """P(at least b of the b+c discordant pairs favour the challenger | no real difference)."""
+    n = b + c
+    return sum(math.comb(n, i) for i in range(b, n + 1)) / 2 ** n if n else 1.0
+
+
+def upper_rule_of_three(n: int) -> float:
+    return min(1.0, 3 / n) if n else math.nan
+
+
+def owners(cases: list[Case]) -> list[str]:
+    return sorted({c.rec.owner for c in cases})
+
+
+def sessions_present(cases: list[Case]) -> list[str]:
+    have = {c.rec.session for c in cases}
+    return [s for s in SESSIONS if s in have]
+
+
+def app_match(cases: list[Case], alg) -> float:
+    """Median relative gap between the app's logged score and the replay, where both used the same templates."""
+    gaps = []
+    for c in cases:
+        if c.key == c.rec.enrollment and c.rec.score and math.isfinite(c.rec.score):
+            gaps.append(abs(alg(c.rec, list(c.templates)) - c.rec.score) / c.rec.score)
+    return statistics.median(gaps) if gaps else math.nan
+
+
+# ---------- report pieces shared with bakeoff.py ----------
+
+def data_section(data: Data, note: str = "", extra: list[str] | None = None) -> list[str]:
+    cases = data.cases
+    L = ["## Data", "", "| Owner | Bud | Session | " + " | ".join(SCENARIOS) + " |",
+         "|---|---|---|" + "---|" * len(SCENARIOS)]
+    for o in owners(cases):
+        side = next(c.side for c in cases if c.rec.owner == o)
+        for s in sessions_present(cases):
+            counts = [sum(c.rec.owner == o and c.rec.session == s and c.rec.scenario == sc for c in cases)
+                      for sc in SCENARIOS]
+            if any(counts):
+                L.append(f"| {o} | {side} | {s} | " + " | ".join(map(str, counts)) + " |")
+    rates = ", ".join(f"{k} {v:.1f}/s" for k, v in data.sample_rates.items())
+    L += ["",
+          f"- Sample rate (median rows ÷ seconds, per folder): {rates}.",
+          "- Every attempt is scored against its owner's S1 enrollment (owners don't re-enroll after S1)."
+          + (f" {data.reenrolled_after_s1} later attempts were logged against a newer enrollment; they are scored "
+             "against S1 anyway." if data.reenrolled_after_s1 else ""),
+          f"- Left out: {data.dropped_device_unknown} attempts the app didn't count (sound output wasn't the AirPods), "
+          f"{data.not_replayable} without logged templates, {data.unknown_scenario} with an unknown scenario. "
+          "Discarded tries (finger slipped, too short) are never logged; see the paper tally."]
+    if note:
+        L.append(f"- {note}")
+    return L + (extra or []) + [""]
+
+
+def owner_table(cases: list[Case], rs: list[float], factor: float) -> list[str]:
+    """Per owner × scenario k/n (Wilson 95%). A1 by session; A4 split S1 (saw the screen) vs S3 (blind)."""
+    cols = [(f"A1 {s[:2]}", is_(OWNER, [s])) for s in sessions_present(cases)]
+    cols += [("A2 FAR", is_(A2)), ("A3 attack", is_(A3)), ("A4 attack S1", is_(A4, [S1])),
+             ("A4 attack S3", is_(A4, [S3])), ("A5 gate 1", lambda r: r.scenario in GATE1)]
+    L = ["| Owner | " + " | ".join(n for n, _ in cols) + " |", "|---|" + "---|" * len(cols)]
+    for o in owners(cases) + ["all"]:
+        cells = []
+        for _, pred in cols:
+            p = pred if o == "all" else (lambda r, pred=pred, o=o: pred(r) and r.owner == o)
+            cells.append(str(rate(cases, rs, factor, p)))
+        L.append(f"| {'**all**' if o == 'all' else o} | " + " | ".join(cells) + " |")
+    return L
+
+
+def quotable(cases: list[Case], rs: list[float], factor: float) -> list[str]:
+    own = rate(cases, rs, factor, is_(OWNER))
+    a2 = rate(cases, rs, factor, is_(A2))
+    a3 = rate(cases, rs, factor, is_(A3))
+    a4 = rate(cases, rs, factor, is_(A4))
+    out = []
+    if own.n:
+        lo, hi = own.ci
+        out.append(f"- The owners got in {own.k}/{own.n} times (Wilson 95% interval {pct(lo)}–{pct(hi)}).")
+    for label, r in (("zero-effort imitations (FAR) got in", a2), ("watched-once attacks succeeded", a3),
+                     ("skilled attacks succeeded", a4)):
+        if r.n:
+            lo, hi = r.ci
+            extra = f"; rule of three: below {pct(upper_rule_of_three(r.n))}" if r.k == 0 else ""
+            out.append(f"- For these imitators, {label} {r.k}/{r.n} times (Wilson 95% interval {pct(lo)}–{pct(hi)}{extra}).")
     return out
 
 
-# ---------- report ----------
+# ---------- docs/evaluation.md ----------
 
-def pct(x: float) -> str:
-    return "–" if math.isnan(x) else f"{x:.0%}" if x >= 0.1 or x == 0 else f"{x:.1%}"
-
-
-def row_at(c: Choice, f: float) -> dict:
-    return next(r for r in c.sweep if r["factor"] == f)
-
-
-def report(records: list[M.Logged], data: Data, choices: list[Choice], best: Choice, charts: dict[str, str],
-           match: dict[str, float]) -> str:
-    verifies = [r for r in records if r.mode == "verify" and r.rejection != "deviceUnknown"]
-    owners = sorted({g.owner for g in data.groups})
-    L = [
-        "# AirSign evaluation",
-        "",
-        f"Generated by `tools/tuning/tune.py --test-logs` on {datetime.now():%Y-%m-%d %H:%M} from the test-mode records of "
-        "[docs/test-protocol.md](test-protocol.md). The recordings stay off the repo.",
-        "",
-        "Every verify attempt is replayed against its own enrollment's 3 templates with the app's matcher (banded DTW, "
-        "band 0.25, durationWeight 0.5), so thresholdFactor and `FeatureScale.rotation` can be changed after the fact. "
-        f"An owner/session passes when at least {OWNER_MIN:.0%} of its A1 attempts are accepted.",
-        "",
-        "## Data",
-        "",
-        "| Owner | Bud | Enrollments | " + " | ".join(SCENARIOS) + " |",
-        "|---|---|---|" + "---|" * len(SCENARIOS),
-    ]
-    for o in owners:
-        gs = [g for g in data.groups if g.owner == o]
-        counts = [sum(a.scenario == sc for g in gs for a in g.attempts) for sc in SCENARIOS]
-        L.append(f"| {o} | {'/'.join(sorted({g.side for g in gs}))} | {len(gs)} | " + " | ".join(map(str, counts)) + " |")
-    L += ["", f"- Left out: {data.dropped_device_unknown} attempts the app didn't count (sound output wasn't the AirPods), "
-              f"{len(data.not_replayable)} whose enrollment wasn't logged, {data.unknown_scenario} with an unknown scenario."]
-    gap = match.get(SETTINGS[0].name, math.nan)
-    gap15 = match.get(SETTINGS[1].name, math.nan)
-    L += [f"- Check: the Python replay matches the app's logged scores to a median {pct(gap)} at rotation 3 "
-          f"and {pct(gap15)} at rotation 1.5, so the app build that recorded them used "
-          f"{'rotation 3' if _nz(gap) <= _nz(gap15) else 'rotation 1.5'}.", ""]
-
-    br = row_at(best, best.factor)
-    L += ["## Recommendation", ""]
-    if best.feasible:
-        L.append(f"**{best.setting.name}, thresholdFactor {best.factor:g}.** Every owner/session stays at ≥ {OWNER_MIN:.0%}, "
-                 f"and imitators (A2–A4 together) were accepted {br['imitators']}.")
+def report(data: Data, rs: list[float], tuned: float | None, match: float, charts: dict[str, str],
+           note: str = "") -> str:
+    cases = data.cases
+    eer_v, eer_f = s1_eer(cases, rs)
+    L = ["# AirSign evaluation", "",
+         f"Generated by `tools/tuning/tune.py --test-logs` on {datetime.now():%Y-%m-%d %H:%M}, following test protocol v2 "
+         "([test-protocol.md](test-protocol.md), [algorithm-bakeoff.md](algorithm-bakeoff.md)). The recordings stay off "
+         "the repo. Only 2 owners and a handful of imitators: these numbers describe **these imitators**, not people in "
+         "general.", "", f"> {DISCLOSURE}", ""]
+    L += data_section(data, note, [f"- Check: the Python baseline matches the app's logged scores to a median {pct(match)}."])
+    L += [f"## Frozen baseline (the app today, thresholdFactor {FROZEN_FACTOR:g})", "",
+          "k/n accepted, Wilson 95% interval. A2 is the false accept rate; A3 and A4 are attack success rates "
+          "(ISO/IEC 30107-3 style), kept apart from FAR.", ""]
+    L += owner_table(cases, rs, FROZEN_FACTOR)
+    L += ["", "### Quotable", ""] + quotable(cases, rs, FROZEN_FACTOR)
+    L += [f"- S1 equal error rate (owner vs A2–A4): {pct(eer_v)}, at factor {eer_f:.2f}. Reported for S1 only.", ""]
+    L += ["## Threshold from S1 owners only", ""]
+    if tuned is None:
+        L += ["Not enough S1 owner attempts to choose a factor.", ""]
     else:
-        L.append(f"**No setting keeps every owner/session at ≥ {OWNER_MIN:.0%}.** The closest is {best.setting.name} at "
-                 f"thresholdFactor {best.factor:g}, where the weakest owner/session gets in {pct(br['owner_min'])}.")
-    if best.factor > CURRENT_FACTOR:
-        L.append(f"The factor is above {CURRENT_FACTOR:g}; the demo threshold override can only tighten, so the default "
-                 "must change in code.")
-    elif best.factor < CURRENT_FACTOR:
-        L.append(f"The factor is below {CURRENT_FACTOR:g}, so the demo threshold override could reach it, "
-                 "but changing the default is cleaner.")
-    if best.setting is not SETTINGS[0]:
-        L.append("Changing `FeatureScale.rotation` is a code change in `Signature.swift` (role A).")
-    L.append("")
-
-    L += ["## Rotation 3 vs 1.5", "",
-          "| Setting | Chosen factor | Weakest owner/session | Owner (all) | A2 zero-effort | A3 watched once | A4 skilled "
-          "| A5 other bud/pair | EER (at factor) |",
-          "|---|---|---|---|---|---|---|---|---|"]
-    for c in choices:
-        r = row_at(c, c.factor)
-        a5 = Rate(r["A5-other-bud"].k + r["A5-other-pair"].k, r["A5-other-bud"].n + r["A5-other-pair"].n)
-        flag = "" if c.feasible else " (target missed)"
-        L.append(f"| {c.setting.name} | {c.factor:g}{flag} | {pct(r['owner_min'])} | {r['owner']} | {r['A2-zero-effort']} "
-                 f"| {r['A3-watched-once']} | {r['A4-skilled']} | {a5} | {pct(c.eer)} ({c.eer_factor:.2f}) |")
-    cur = row_at(choices[0], CURRENT_FACTOR)
-    L += ["", f"For reference, today's app (rotation 3, factor {CURRENT_FACTOR:g}): weakest owner/session "
-              f"{pct(cur['owner_min'])}, owner {cur['owner']}, imitators {cur['imitators']}.", ""]
-
-    L += [f"## Acceptance by scenario ({best.setting.name}, factor {best.factor:g})", "",
-          "| Scenario | Accepted | 95% upper bound |", "|---|---|---|"]
-    for sc in SCENARIOS:
-        r = br[sc] if sc != OWNER else br["owner"]
-        note = "" if r.n == 0 else (f"{pct(upper95(r.k, r.n))} (rule of three; exact {pct(exact_zero_bound(r.n))})"
-                                    if r.k == 0 else f"{pct(upper95(r.k, r.n))} (Clopper-Pearson)")
-        L.append(f"| {sc} | {r} | {note if sc != OWNER else '–'} |")
-    L += ["", "Owner by session:", "", "| Owner | " + " | ".join(SESSIONS) + " |", "|---|" + "---|" * len(SESSIONS)]
-    for o in owners:
-        cells = [br["owner_cells"].get((o, s)) for s in SESSIONS]
-        L.append(f"| {o} | " + " | ".join(str(c) if c else "–" for c in cells) + " |")
-    L.append("")
-
-    L += ["## Quotable", ""]
-    for sc in IMITATION:
-        r = br[sc]
-        if r.n and r.k == 0:
-            L.append(f"- {sc}: 0 of {r.n} imitations accepted, so with 95% confidence the success rate is below "
-                     f"{pct(3 / r.n)} (rule of three).")
-        elif r.n:
-            L.append(f"- {sc}: {r.k} of {r.n} imitations accepted ({pct(r.rate)}); 95% upper bound {pct(upper95(r.k, r.n))}.")
-    a5n = br["A5-other-bud"].n + br["A5-other-pair"].n
-    if a5n:
-        L.append(f"- Gate 1: {br['A5-other-bud'].k + br['A5-other-pair'].k} of {a5n} owner attempts with the wrong AirPod "
-                 "or the wrong AirPods accepted.")
-    L.append(f"- Equal error rate (owner A1 vs imitators A2–A4): {pct(best.eer)}, at thresholdFactor {best.eer_factor:.2f}.")
-    L.append("")
-
+        L += [f"The smallest factor that accepts ≥ {OWNER_TARGET:.0%} of S1 owner attempts, plus {MARGIN:.2f}, is "
+              f"**{tuned:.3f}**. It was chosen without looking at any imitator data and is applied unchanged to S2/S3. "
+              f"This is secondary: the frozen {FROZEN_FACTOR:g} stays primary.", ""]
+        L += owner_table(cases, rs, tuned)
+        if tuned > FROZEN_FACTOR:
+            L += ["", f"It is above {FROZEN_FACTOR:g}; the demo threshold override can only tighten, so using it means "
+                      "changing the default in code."]
+        L.append("")
     L += ["## Charts", "", f"![Scores by scenario]({charts['scores']})", "",
-          "Each dot is one attempt: its score divided by the worst distance between that enrollment's own templates. "
-          "An attempt is accepted when its dot is left of the threshold line.", "",
-          f"![Acceptance vs thresholdFactor]({charts['sweep']})", ""]
-
-    L += [f"## Threshold sweep ({best.setting.name})", "",
-          "| thresholdFactor | Weakest owner/session | Owner | A2 | A3 | A4 |", "|---|---|---|---|---|---|"]
-    for r in best.sweep:
-        L.append(f"| {r['factor']:g} | {pct(r['owner_min'])} | {r['owner']} | {r['A2-zero-effort']} "
-                 f"| {r['A3-watched-once']} | {r['A4-skilled']} |")
-    L += ["", "## Caveats", "",
-          "- The factor is fitted to these attempts, so the true rates will be a little worse. The 95% bounds show how "
-          "little a small sample can prove.",
-          "- A4 imitators saw the score and gate lights in the test lab, which is more than a real attacker gets.",
-          "- Gate 1 rejections (A5) come from the app's record: the Python replay can't see the AirPods' device ID.",
-          f"- Logged verify attempts in total: {len(verifies)}.", ""]
+          "Each dot is one attempt: its score divided by the worst distance between the owner's own S1 templates. "
+          "It is accepted when it sits left of the threshold line.", "",
+          f"![Acceptance vs thresholdFactor]({charts['sweep']})", "",
+          "## Caveats", "",
+          "- 2 owners and few imitators: no claim about the general population.",
+          "- A4 imitators saw the score and gate lights in S1; in S3 they signed blind.",
+          "- Gate 1 (A5) comes from the app's record: the replay can't see the AirPods' device ID.",
+          f"- {DISCLOSURE}", ""]
     return "\n".join(L)
 
 
-def run(dirs: list[Path], report_path: Path) -> None:
+def draw_scores(cases: list[Case], rs: list[float], tuned: float | None, path: Path) -> None:
+    rows = [svgchart.StripRow("A1 owner, S1", [r for c, r in zip(cases, rs) if is_(OWNER, [S1])(c.rec)], "owner"),
+            svgchart.StripRow("A1 owner, S2+S3", [r for c, r in zip(cases, rs) if is_(OWNER, LATER)(c.rec)], "owner")]
+    for sc, label in ((A2, "A2 zero-effort"), (A3, "A3 watched once"), (A4, "A4 skilled")):
+        rows.append(svgchart.StripRow(label, [r for c, r in zip(cases, rs) if c.rec.scenario == sc], "imitator"))
+    marks = [svgchart.Mark(FROZEN_FACTOR, f"frozen {FROZEN_FACTOR:g}")]
+    if tuned is not None and abs(tuned - FROZEN_FACTOR) > 1e-6:
+        marks.append(svgchart.Mark(tuned, f"S1 owner-only {tuned:.2f}", dashed=True))
+    svgchart.strip_plot(path, "Baseline score ÷ worst S1 template pair, by scenario", rows, marks)
+
+
+def draw_sweep(cases: list[Case], rs: list[float], path: Path) -> None:
+    preds = [("Owner S1", is_(OWNER, [S1])), ("Owner S2+S3", is_(OWNER, LATER)), ("A2 FAR", is_(A2)),
+             ("A3+A4 attacks", lambda r: r.scenario in (A3, A4))]
+    series = [svgchart.Series(name, [rate(cases, rs, f, p).rate for f in FACTORS]) for name, p in preds]
+    svgchart.line_chart(path, "Baseline acceptance vs thresholdFactor", FACTORS, series,
+                        hline=(OWNER_TARGET, f"owner target {OWNER_TARGET:.0%}"),
+                        vline=(FROZEN_FACTOR, f"frozen {FROZEN_FACTOR:g}"))
+
+
+def load(dirs: list[Path]) -> Data:
     records = M.load_logs(dirs)
     data = build(records)
-    n = sum(len(g.attempts) for g in data.groups)
-    print(f"[tuning] {len(records)} records, {len(data.groups)} enrollments, {n} replayable attempts", file=sys.stderr)
-    if not data.groups:
-        sys.exit("[tuning] nothing to replay: need enroll records and verify records with the same enrollment")
-    choices = []
-    for setting in SETTINGS:
-        choices.append(choose(setting, score_all(data, setting)))
-        print(f"[tuning] {setting.name}: factor {choices[-1].factor:g}", file=sys.stderr)
-    best = pick(choices)
+    print(f"[tuning] {len(records)} records, {len(data.cases)} replayable attempts", file=sys.stderr)
+    if not data.cases:
+        sys.exit("[tuning] nothing to replay: need S1 enroll records and verify records from the same owner")
+    return data
+
+
+def run(dirs: list[Path], report_path: Path, note: str = "") -> None:
+    import algorithms_ref as R  # the app's baseline; bakeoff.py compares the challengers
+    data = load(dirs)
+    rs = ratios(R.baseline, data.cases)
+    tuned = s1_factor(data.cases, rs)
     chart_dir = report_path.parent / "evaluation"
     chart_dir.mkdir(parents=True, exist_ok=True)
-    charts = {"scores": "evaluation/scores.svg", "sweep": "evaluation/acceptance.svg"}
-    draw_scores(best, chart_dir / "scores.svg")
-    draw_sweep(best, chart_dir / "acceptance.svg")
-    report_path.write_text(report(records, data, choices, best, charts, app_match(data)), encoding="utf-8")
+    draw_scores(data.cases, rs, tuned, chart_dir / "scores.svg")
+    draw_sweep(data.cases, rs, chart_dir / "acceptance.svg")
+    text = report(data, rs, tuned, app_match(data.cases, R.baseline),
+                  {"scores": "evaluation/scores.svg", "sweep": "evaluation/acceptance.svg"}, note)
+    report_path.write_text(text, encoding="utf-8")
     print(f"[tuning] wrote {report_path} and {chart_dir}", file=sys.stderr)
-
-
-# ---------- charts ----------
-
-LABELS = {OWNER: "A1 owner", "A2-zero-effort": "A2 zero-effort", "A3-watched-once": "A3 watched once",
-          "A4-skilled": "A4 skilled"}
-
-
-def draw_scores(c: Choice, path: Path) -> None:
-    rows = []
-    for sc in [OWNER, *IMITATION]:
-        vals = [s.ratio for s in c.scored if s.rec.scenario == sc]
-        rows.append(svgchart.StripRow(LABELS[sc], vals, "owner" if sc == OWNER else "imitator"))
-    marks = [svgchart.Mark(c.factor, f"chosen {c.factor:g}")]
-    if c.factor != CURRENT_FACTOR:
-        marks.append(svgchart.Mark(CURRENT_FACTOR, f"today {CURRENT_FACTOR:g}", dashed=True))
-    svgchart.strip_plot(path, f"Score ÷ worst template pair, by scenario ({c.setting.name})", rows, marks)
-
-
-def draw_sweep(c: Choice, path: Path) -> None:
-    xs = [r["factor"] for r in c.sweep]
-    series = [svgchart.Series("Owner (weakest)", [r["owner_min"] for r in c.sweep])]
-    for sc in IMITATION:
-        series.append(svgchart.Series(LABELS[sc], [r[sc].rate for r in c.sweep]))
-    svgchart.line_chart(path, f"Acceptance vs thresholdFactor ({c.setting.name})", xs, series,
-                        hline=(OWNER_MIN, f"owner target {OWNER_MIN:.0%}"), vline=(c.factor, f"chosen {c.factor:g}"))
