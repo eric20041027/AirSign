@@ -10,8 +10,8 @@
 
 | 角色 | 人和設備 | 負責什麼 | 負責的檔案（其他人不要改） |
 |---|---|---|---|
-| **A 核心** | Eric + Claude Code，MacBook Pro，AirPods Pro 3 | 計畫的 Task 1–6、8、9：比對、加密、上鎖解鎖、註冊和解鎖流程 | `airsign/Package.swift`、`airsign/scripts/build-app.sh`、`airsign/Resources/`、`airsign/Sources/AirSignCore/`、`airsign/Tests/`、`airsign/Sources/AirSign/AirSignApp.swift`、`AppModel.swift`、`KeychainSecretStore.swift`、`Views/EnrollView.swift`、`Views/UnlockView.swift`、`Views/SettingsView.swift` |
-| **B 硬體與 Finder** | 隊友 B + Antigravity，MacBook Air M1，AirPods 4 | Task 7（讀 AirPods、裝置 ID、探測模式）、簽名畫面元件、Task 10（右鍵選單、安裝腳本）、第二台 Mac 的驗證 | `airsign/Sources/AirSign/HeadphoneMotionSource.swift`、`AudioDeviceIdentity.swift`、`ProbeMode.swift`、`ServicesProvider.swift`、`Views/SignaturePad.swift`、`airsign/scripts/install.sh` |
+| **A 核心** | Eric + Claude Code，MacBook Pro，AirPods Pro 3 | 計畫的 Task 1–9：比對、加密、上鎖解鎖、讀 AirPods、註冊和解鎖流程（16:00 起 A 接手 Task 7 和簽名畫面元件） | `airsign/` 底下除了 B 那兩個檔案以外的全部 |
+| **B Finder 與第二台 Mac** | 隊友 B + Antigravity，MacBook Air M1，AirPods 4 | Task 10（右鍵選單、安裝腳本）、第二台 Mac 的驗證、收集公平的模仿資料 | `airsign/Sources/AirSign/ServicesProvider.swift`、`airsign/scripts/install.sh` |
 | **C 調校與交件** | 隊友 C + Claude Max，Windows 11 | 用 Python 調比對參數、Devpost 文案、簡報、demo 腳本、剪影片、填評審報名表 | `docs/tuning.md`、`docs/devpost.md`、`docs/demo-script.md`、`tools/tuning/` |
 
 **跟計畫不同的地方**：計畫裡 Task 7 和 Task 10 會改到 `AirSignApp.swift`。為了避免衝突，B 把探測模式寫在 `ProbeMode.swift`、右鍵服務寫在 `ServicesProvider.swift`，再由 A 在 `AirSignApp.swift` 加一行呼叫。
@@ -54,10 +54,8 @@ You're helping build AirSign for MakeUC 2026. Read TEAM.md, then
 docs/superpowers/specs/2026-11-07-airsign-design.md and
 docs/superpowers/plans/2026-11-07-airsign.md.
 I am role B. Only edit the files TEAM.md assigns to role B.
-Do plan Task 7, but put the --probe code in Sources/AirSign/ProbeMode.swift
-as `enum ProbeMode { static func run() }`, which role A will call.
-Then build Views/SignaturePad.swift with SwiftUI previews using synthetic
-data, matching the interface in Task 8. Then do plan Task 10, with the
+Role A already owns Task 7 and Views/SignaturePad.swift; do not edit them.
+Do plan Task 10, with the
 services provider in Sources/AirSign/ServicesProvider.swift as
 `final class ServicesProvider: NSObject` exposing lockFiles/unlockFiles and
 calling a closure `onFiles: ([URL]) -> Void`.
