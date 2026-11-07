@@ -5,6 +5,10 @@ Usage:
   python tune.py DATA_DIR \
       --round "Round 1" 20261107-143432-081,20261107-143437-789,20261107-143444-477 20261107-143445 20261107-144241 \
       --round "Round 2" 20261107-144527-280,20261107-144533-012,20261107-144616-034 20261107-144617 20261107-145000
+  python tune.py --test-logs C:/airsign-data/mac1 C:/airsign-data/mac2 --report ../../docs/evaluation.md
+
+--test-logs reads the app's test-mode records (docs/test-protocol.md) instead
+and writes the evaluation report plus two SVG charts next to it; see evaluate.py.
 
 DATA_DIR holds the spike's attempt-*.json files. Keep it OUTSIDE the repo:
 signature recordings are biometric-like personal data and must never be committed.
@@ -288,7 +292,9 @@ def report(sessions: list[M.Session], rows: list[Row], owner_min: float, data_no
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("data", type=Path, help="folder with attempt-*.json (outside the repo)")
+    ap.add_argument("data", type=Path, nargs="?", help="folder with spike attempt-*.json (outside the repo)")
+    ap.add_argument("--test-logs", type=Path, nargs="+", metavar="DIR",
+                    help="folders with the app's test-mode records (searched recursively); needs --report")
     ap.add_argument("--round", dest="rounds", action="append", nargs=4, metavar=("NAME", "TEMPLATES", "FROM", "TO"),
                     help="a named round: comma-separated template ids, first and last verify id (prefixes ok)")
     ap.add_argument("--min-dur", type=float, default=1.2, help="drop verify attempts not longer than this (s)")
@@ -299,6 +305,17 @@ def main() -> None:
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")  # the report has ≥ and ÷; Windows pipes default to cp950
 
+    if args.test_logs:
+        for d in args.test_logs:
+            if d.resolve().is_relative_to(REPO):
+                print(f"[tuning] WARNING: {d} is inside the repo. Never commit signature recordings.", file=sys.stderr)
+        if not args.report:
+            ap.error("--test-logs needs --report (the charts are written next to it)")
+        import evaluate
+        evaluate.run(args.test_logs, args.report)
+        return
+    if args.data is None:
+        ap.error("give DATA_DIR or --test-logs")
     data = args.data.resolve()
     if data.is_relative_to(REPO):
         print(f"[tuning] WARNING: {data} is inside the repo. Never commit signature recordings.", file=sys.stderr)
