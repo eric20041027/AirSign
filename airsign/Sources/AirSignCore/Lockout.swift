@@ -27,6 +27,25 @@ public struct Lockout: Codable, Equatable {
         lockedUntil = nil
     }
 
+    public enum Effect: Equatable {
+        case success, failure, none
+    }
+
+    /// A recovery code only counts when at least one file judged it: junk or unreadable
+    /// `.airsign` files must not reset the count.
+    public static func recoveryEffect(restored: Int, wrongKey: Int) -> Effect {
+        if wrongKey > 0 { return .failure }
+        return restored > 0 ? .success : .none
+    }
+
+    public mutating func apply(_ effect: Effect, now: Date) {
+        switch effect {
+        case .success: recordSuccess()
+        case .failure: recordFailure(now: now)
+        case .none: break
+        }
+    }
+
     /// Seconds left in the cooldown, or nil when unlocking is allowed.
     public func remaining(now: Date) -> TimeInterval? {
         guard let until = lockedUntil, until > now else { return nil }

@@ -41,6 +41,21 @@ import Testing
     #expect(wrongPair.rejection == .wrongDevice && !wrongPair.accepted)
 }
 
+@Test func unknownOutputDeviceIsNotAcceptedWhenADeviceWasEnrolled() throws {
+    let e = try enroll((0..<3).map { _ in Signature(samples: strokes(ownerShape, noise: 0.25)) }, deviceUID: "UID-A")
+    let v = verify(Signature(samples: strokes(ownerShape, n: 112, noise: 0.1)), deviceUID: nil, against: e)
+    #expect(!v.accepted && v.rejection == .deviceUnknown)
+}
+
+@Test func thresholdOverrideCanOnlyTighten() throws {
+    let e = try enroll((0..<3).map { _ in Signature(samples: strokes(ownerShape, noise: 0.25)) }, deviceUID: "UID-A")
+    let fake = Signature(samples: strokes(forgeryShape, noise: 0.25))
+    let loosened = verify(fake, deviceUID: "UID-A", against: e, threshold: e.threshold * 100)
+    #expect(!loosened.accepted && loosened.threshold == e.threshold)
+    let tightened = verify(fake, deviceUID: "UID-A", against: e, threshold: e.threshold / 2)
+    #expect(tightened.threshold == e.threshold / 2)
+}
+
 @Test func lightsStayFiniteWhenEnrolledGateIsIdentical() throws {
     let e = try enroll((0..<3).map { _ in Signature(samples: strokes(ownerShape)) }, deviceUID: nil)
     let v = verify(Signature(samples: strokes(ownerShape)), deviceUID: nil, against: e)

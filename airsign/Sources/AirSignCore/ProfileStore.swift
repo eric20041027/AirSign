@@ -57,6 +57,14 @@ public struct ProfileStore {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
+    /// First enrollment on this Mac, or after the profile was lost or deleted: a fresh master key,
+    /// so a newly enrolled signature can never open files locked earlier. Those open with their recovery code.
+    public func createProfile(_ profile: Profile) throws {
+        let key = SymmetricKey(size: .bits256)
+        try secrets.save(key.withUnsafeBytes { Data($0) }, as: Self.masterKeyName)
+        try save(profile)
+    }
+
     public func masterKey() throws -> SymmetricKey {
         try key(Self.masterKeyName)
     }

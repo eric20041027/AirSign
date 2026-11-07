@@ -20,7 +20,8 @@ struct UnlockView: View {
             }
             SignaturePad(
                 path: model.livePath,
-                templates: model.profile?.enrollment.templates ?? [],
+                // The enrolled shapes are only drawn after the owner has proven it's them.
+                templates: model.lastVerdict?.accepted == true ? (model.profile?.enrollment.templates ?? []) : [],
                 lights: model.demoMode ? model.lastVerdict?.lights : nil,
                 gateOne: model.demoMode ? model.lastVerdict.map { $0.rejection != .wrongBud && $0.rejection != .wrongDevice } : nil,
                 latestColor: model.lastVerdict.map { $0.accepted ? Color.green : Color.red } ?? .blue,

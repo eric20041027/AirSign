@@ -11,10 +11,10 @@ struct SettingsView: View {
                    isOn: Binding(get: { model.demoMode }, set: { model.setDemoMode($0) }))
             if model.demoMode, let enrolled = model.profile?.enrollment.threshold {
                 HStack {
-                    Text("Threshold")
+                    Text("Threshold (stricter only)")
                     Slider(value: Binding(get: { model.thresholdOverride ?? enrolled },
                                           set: { model.thresholdOverride = $0 }),
-                           in: 0...max(enrolled * 3, 0.01))
+                           in: 0...max(enrolled, 0.01))
                     Text(AppModel.format(model.thresholdOverride ?? enrolled)).monospacedDigit()
                     Button("Reset") { model.thresholdOverride = nil }
                         .disabled(model.thresholdOverride == nil)

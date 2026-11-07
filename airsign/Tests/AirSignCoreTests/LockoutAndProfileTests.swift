@@ -21,6 +21,39 @@ import Testing
     #expect(l.failures == 1 && l.lockedUntil == nil)
 }
 
+@Test func recoveryAttemptsOnlyCountWhenAFileWasJudged() {
+    #expect(Lockout.recoveryEffect(restored: 0, wrongKey: 0) == .none)   // only junk or unreadable files
+    #expect(Lockout.recoveryEffect(restored: 2, wrongKey: 0) == .success)
+    #expect(Lockout.recoveryEffect(restored: 1, wrongKey: 1) == .failure)
+    #expect(Lockout.recoveryEffect(restored: 0, wrongKey: 1) == .failure)
+}
+
+@Test func applyingNoneLeavesTheCountAlone() {
+    var l = Lockout()
+    l.recordFailure(now: Date())
+    l.apply(.none, now: Date())
+    #expect(l.failures == 1)
+    l.apply(.failure, now: Date())
+    #expect(l.failures == 2)
+    l.apply(.success, now: Date())
+    #expect(l.failures == 0)
+}
+
+@Test func creatingAProfileRotatesTheMasterKey() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let store = ProfileStore(directory: dir, secrets: InMemorySecretStore())
+    let before = try store.masterKey()
+    let code = RecoveryCode.generate()
+    let pub = try RecoveryCode.privateKey(for: code).publicKey
+    let sealed = try LockedFile.seal(Data("owner".utf8), originalName: "a.txt", masterKey: before, recoveryPublicKey: pub)
+    let e = try enroll((0..<3).map { _ in Signature(samples: strokes(ownerShape, noise: 0.2)) }, deviceUID: "UID-B")
+    try store.createProfile(Profile(enrollment: e, recoveryPublicKey: Data(repeating: 1, count: 32), lockout: Lockout(), demoMode: false))
+    // A fresh enrollment (for example after someone deleted profile.bin) must not inherit the old master key.
+    #expect(throws: LockedFileError.authenticationFailed) { try LockedFile.open(sealed, masterKey: store.masterKey()) }
+    #expect(try LockedFile.open(sealed, recoveryCode: code).plaintext == Data("owner".utf8))
+    #expect(try store.load()?.enrollment == e)
+}
+
 @Test func profileRoundTripsAndIsNotPlaintextOnDisk() throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let store = ProfileStore(directory: dir, secrets: InMemorySecretStore())

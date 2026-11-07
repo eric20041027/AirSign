@@ -27,12 +27,16 @@ final class AppModel: ObservableObject {
     @Published private(set) var recoveryCodeToShow: String?
     @Published private(set) var pendingUnlock: [URL] = []
     @Published private(set) var lockoutRemaining: TimeInterval?
+    /// Set while the profile can't be written: attempts are refused so the lockout can't be dodged.
+    @Published private(set) var saveBlocked = false
     @Published var thresholdOverride: Double?
 
     private let store = ProfileStore(directory: ProfileStore.defaultDirectory, secrets: KeychainSecretStore())
     private let motion = HeadphoneMotionSource()
     private var recorder = SignatureRecorder()
     private var signingSamples: [MotionSample] = []
+    /// A first enrollment waits here until the user confirms the recovery code, so quitting early saves nothing.
+    private var pendingProfile: Profile?
     private var timer: Timer?
 
     var demoMode: Bool { profile?.demoMode ?? true }
@@ -106,8 +110,16 @@ final class AppModel: ObservableObject {
             say("Cancelled.", .neutral)
             return
         }
-        if screen != .enroll, let remaining = lockoutRemaining {
+        if screen != .enroll, let remaining = profile?.lockout.remaining(now: Date()) {
             say("Too many tries. Wait \(Int(remaining.rounded(.up))) s.", .bad)
+            return
+        }
+        if screen != .enroll, saveBlocked {
+            say("AirSign can't save its settings, so unlocking is paused. Check the AirSign folder in Application Support.", .bad)
+            return
+        }
+        if screen == .enroll, AudioDeviceIdentity.headphoneUID() == nil {
+            say("Set the sound output to your AirPods (Control Center → Sound), then enroll.", .bad)
             return
         }
         guard case .streaming = motionStatus else {
@@ -188,8 +200,13 @@ final class AppModel: ObservableObject {
     }
 
     private func finishEnrollment() {
+        guard let deviceUID = AudioDeviceIdentity.headphoneUID() else {
+            enrolledSoFar.removeLast()
+            say("Set the sound output to your AirPods (Control Center → Sound), then sign once more.", .bad)
+            return
+        }
         do {
-            let enrollment = try enroll(enrolledSoFar, deviceUID: AudioDeviceIdentity.headphoneUID())
+            let enrollment = try enroll(enrolledSoFar, deviceUID: deviceUID)
             if isReenrolling, var updated = profile {
                 updated.enrollment = enrollment
                 updated.lockout.recordSuccess()
@@ -202,10 +219,9 @@ final class AppModel: ObservableObject {
             }
             let code = RecoveryCode.generate()
             let recoveryKey = try RecoveryCode.privateKey(for: code).publicKey.rawRepresentation
-            _ = try store.masterKey()
-            try save(Profile(enrollment: enrollment, recoveryPublicKey: recoveryKey, lockout: Lockout(), demoMode: true))
+            pendingProfile = Profile(enrollment: enrollment, recoveryPublicKey: recoveryKey, lockout: Lockout(), demoMode: true)
             recoveryCodeToShow = code
-            say("Signature saved. Write down your recovery code.", .good)
+            say("Write down your recovery code. Your signature is saved when you confirm.", .good)
         } catch {
             enrolledSoFar = []
             say("Could not save the signature: \(error.localizedDescription). Start again.", .bad)
@@ -213,6 +229,18 @@ final class AppModel: ObservableObject {
     }
 
     func confirmRecoveryCodeWritten() {
+        guard let pending = pendingProfile else { return }
+        do {
+            try store.createProfile(pending)
+            profile = pending
+            pendingProfile = nil
+        } catch {
+            recoveryCodeToShow = nil
+            pendingProfile = nil
+            enrolledSoFar = []
+            say("Could not save the signature: \(error.localizedDescription). Enroll again.", .bad)
+            return
+        }
         recoveryCodeToShow = nil
         enrolledSoFar = []
         screen = pendingUnlock.isEmpty ? .home : .unlock
@@ -236,6 +264,10 @@ final class AppModel: ObservableObject {
         let verdict = verify(signature, deviceUID: AudioDeviceIdentity.headphoneUID(), against: current.enrollment,
                              threshold: thresholdOverride)
         lastVerdict = verdict
+        if verdict.rejection == .deviceUnknown {
+            say(Self.describe(verdict), .warn)
+            return
+        }
         guard verdict.accepted else {
             current.lockout.recordFailure(now: Date())
             persist(current)
@@ -256,8 +288,12 @@ final class AppModel: ObservableObject {
     }
 
     func submitRecoveryCode(_ code: String) {
-        if let remaining = lockoutRemaining {
+        if let remaining = profile?.lockout.remaining(now: Date()) {
             say("Too many tries. Wait \(Int(remaining.rounded(.up))) s.", .bad)
+            return
+        }
+        if saveBlocked {
+            say("AirSign can't save its settings, so unlocking is paused.", .bad)
             return
         }
         guard (try? RecoveryCode.normalize(code)) != nil else {
@@ -276,10 +312,10 @@ final class AppModel: ObservableObject {
             return
         }
         let outcome = unlockPending { try LockedFile.open($0, recoveryCode: code) }
-        if outcome.wrongKey.isEmpty {
-            registerSuccess()
-        } else {
-            registerFailure()
+        if var current = profile {
+            current.lockout.apply(Lockout.recoveryEffect(restored: outcome.restored.count, wrongKey: outcome.wrongKey.count),
+                                  now: Date())
+            persist(current)
         }
         let wrong = outcome.wrongKey.map { "\($0.lastPathComponent): wrong recovery code." }
         report(heading: "Recovery code", outcome: outcome, extra: wrong)
@@ -337,10 +373,12 @@ final class AppModel: ObservableObject {
 
     private func confirmIdentity(_ signature: Signature) {
         guard var current = profile else { return }
-        let verdict = verify(signature, deviceUID: AudioDeviceIdentity.headphoneUID(), against: current.enrollment,
-                             threshold: thresholdOverride)
+        // Never the demo slider here: changing the signature always uses the enrolled threshold.
+        let verdict = verify(signature, deviceUID: AudioDeviceIdentity.headphoneUID(), against: current.enrollment)
         lastVerdict = verdict
-        if verdict.accepted {
+        if verdict.rejection == .deviceUnknown {
+            say(Self.describe(verdict), .warn)
+        } else if verdict.accepted {
             current.lockout.recordSuccess()
             persist(current)
             startReenrollment()
@@ -377,23 +415,21 @@ final class AppModel: ObservableObject {
         persist(current)
     }
 
-    private func registerSuccess() {
-        guard var current = profile else { return }
-        current.lockout.recordSuccess()
-        persist(current)
-    }
-
     private func save(_ updated: Profile) throws {
         try store.save(updated)
         profile = updated
     }
 
+    /// Updates memory first so a failed write can't erase a failure count, then blocks attempts until saving works.
     private func persist(_ updated: Profile) {
+        profile = updated
         do {
-            try save(updated)
+            try store.save(updated)
+            saveBlocked = false
         } catch {
+            saveBlocked = true
             NSLog("AirSign: could not save profile: %@", error.localizedDescription)
-            say("Could not save AirSign settings: \(error.localizedDescription)", .bad)
+            say("Could not save AirSign settings, so unlocking is paused: \(error.localizedDescription)", .bad)
         }
     }
 
@@ -420,6 +456,7 @@ final class AppModel: ObservableObject {
         case .wrongBud: return "Not recognized: wrong AirPod side."
         case .wrongDevice: return "Not recognized: different AirPods."
         case .scoreTooHigh: return "Not recognized: signature doesn't match (\(numbers))."
+        case .deviceUnknown: return "Set the sound output to your AirPods (Control Center → Sound), then sign again. This try was not counted."
         case nil: return "Recognized (\(numbers))."
         }
     }
