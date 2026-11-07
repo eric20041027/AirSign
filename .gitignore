@@ -20,3 +20,6 @@ spikes/airpods-motion/*.csv
 
 # Plan execution workspace
 .superpowers/
+
+# Local-only secrets (demo recovery code, never pushed)
+.local/

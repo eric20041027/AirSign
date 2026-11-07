@@ -44,6 +44,8 @@ public struct GateLight: Equatable {
 
 public enum Rejection: Equatable {
     case wrongBud, wrongDevice, scoreTooHigh
+    /// A device was enrolled but the current output is not identifiable headphones; not a failed signature.
+    case deviceUnknown
 }
 
 public struct Verdict: Equatable {
@@ -93,8 +95,9 @@ public func enroll(_ sigs: [Signature], deviceUID: String?) throws -> Enrollment
     )
 }
 
+/// `override` can only make the check stricter than the enrolled threshold, never looser.
 public func verify(_ sig: Signature, deviceUID: String?, against e: Enrollment, threshold override: Double? = nil) -> Verdict {
-    let threshold = override ?? e.threshold
+    let threshold = min(override ?? e.threshold, e.threshold)
     let score = e.templates.map { distance(sig, $0) }.min() ?? .infinity
     let lights = Gate.allCases.map { gate in
         let best = e.templates.map { gateDistance(sig, $0, gate) }.min() ?? .infinity
@@ -103,7 +106,9 @@ public func verify(_ sig: Signature, deviceUID: String?, against e: Enrollment, 
     let rejection: Rejection?
     if sig.side != e.side {
         rejection = .wrongBud
-    } else if let current = deviceUID, let enrolled = e.deviceUID, current != enrolled {
+    } else if e.deviceUID != nil, deviceUID == nil {
+        rejection = .deviceUnknown
+    } else if let enrolled = e.deviceUID, deviceUID != enrolled {
         rejection = .wrongDevice
     } else if !(score <= threshold) {
         rejection = .scoreTooHigh
