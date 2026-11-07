@@ -22,6 +22,7 @@ public struct ProfileStore {
     static let fileName = "profile.bin"
     static let profileKeyName = "profile-key"
     static let masterKeyName = "master-key"
+    static let pairedKeysName = "paired-recovery-keys"
 
     private let directory: URL
     private let secrets: SecretStore
@@ -59,10 +60,35 @@ public struct ProfileStore {
 
     /// First enrollment on this Mac, or after the profile was lost or deleted: a fresh master key,
     /// so a newly enrolled signature can never open files locked earlier. Those open with their recovery code.
+    /// Pairings belong to the previous owner too, so they are forgotten here.
     public func createProfile(_ profile: Profile) throws {
         let key = SymmetricKey(size: .bits256)
         try secrets.save(key.withUnsafeBytes { Data($0) }, as: Self.masterKeyName)
+        try forgetPairedMacs()
         try save(profile)
+    }
+
+    // MARK: - Paired Macs
+
+    /// Recovery keys of the owner's other Macs. Files locked there open here after this Mac's signature check.
+    public func pairedRecoveryKeys() throws -> [Curve25519.KeyAgreement.PrivateKey] {
+        guard let data = try secrets.load(Self.pairedKeysName) else { return [] }
+        return try JSONDecoder().decode([Data].self, from: data)
+            .map { try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: $0) }
+    }
+
+    /// Returns false when that Mac was already paired.
+    @discardableResult
+    public func addPairedRecoveryKey(_ key: Curve25519.KeyAgreement.PrivateKey) throws -> Bool {
+        var raws = try pairedRecoveryKeys().map(\.rawRepresentation)
+        guard !raws.contains(key.rawRepresentation) else { return false }
+        raws.append(key.rawRepresentation)
+        try secrets.save(JSONEncoder().encode(raws), as: Self.pairedKeysName)
+        return true
+    }
+
+    public func forgetPairedMacs() throws {
+        try secrets.delete(Self.pairedKeysName)
     }
 
     public func masterKey() throws -> SymmetricKey {
