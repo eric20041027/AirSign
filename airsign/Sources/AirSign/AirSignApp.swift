@@ -17,6 +17,7 @@ struct AirSignApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     lazy var model = AppModel()
+    private var services: ServicesProvider?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if CommandLine.arguments.contains("--selftest-keychain") {
@@ -24,7 +25,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if CommandLine.arguments.contains("--probe") {
             ProbeMode.run()
+            return
         }
+        registerFinderServices()
+    }
+
+    /// Finder → right-click → "Lock with AirSign" / "Unlock with AirSign" (declared under NSServices in Info.plist).
+    private func registerFinderServices() {
+        let provider = ServicesProvider { [weak self] urls in
+            MainActor.assumeIsolated { self?.model.handleOpen(urls) }
+        }
+        services = provider
+        NSApp.servicesProvider = provider
+        NSUpdateDynamicServices()
     }
 
     /// Double-clicking an `.airsign` file or `open -a AirSign <file>` arrives here.
