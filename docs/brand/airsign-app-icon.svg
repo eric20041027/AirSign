@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs><filter id="sh" x="-10%" y="-10%" width="120%" height="125%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity=".22"/></filter></defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#ffffff" filter="url(#sh)"/>
+  <svg x="100" y="100" width="824" height="824" viewBox="105.95 -80.14 1286.86 1286.86">
+      
+      <g id="iconContent">
+        <g transform="translate(0.0 1.5158081054687504) translate(939 399.5) rotate(0) scale(0.9142271899898136) translate(-939 -399.5)"><g><path d="M817.5 415 C817.5 338 872.5 294 942.5 294 C1014.5 294 1060.5 342 1060.5 405 V505" fill="none" stroke="#111214" stroke-width="48" stroke-linecap="round"/></g></g>
+        <g transform="translate(0 0) translate(939 679) rotate(0) scale(1) translate(-939 -679)"><g><path d="M760 604 V561 Q760 501 820 501 H1058 Q1118 501 1118 561 V797 Q1118 857 1058 857 H820 Q760 857 760 797 V791" fill="none" stroke="#111214" stroke-width="42" stroke-linejoin="round"/></g></g>
+        <g transform="translate(-0.5728759765625 0.6206665039062501) translate(939 679) rotate(0) scale(1) translate(-939 -679)"><g><g fill="#111214">
+      <circle cx="939" cy="634" r="56"/>
+      <path d="M916 668 H962 L972 780 H906 Z"/>
+    </g></g></g>
+        <g transform="translate(19.634 20.589233398437504) translate(368 526) rotate(0) scale(1) translate(-368 -526)"><g><path d="M268 600 V545 C268 485 312 452 368 452 C427 452 468 490 468 545 V600" fill="#ffffff" stroke="#111214" stroke-width="30" stroke-linejoin="round"/></g></g>
+        <g transform="translate(19.634277343750007 0.33416748046874867) translate(584.5896606445312 695.5) rotate(0) scale(1) translate(-584.5896606445312 -695.5)"><g><path d="M530 633 L893 633 Q912 640 920 660 C932 680 925 693 912 705 L868 760 H852 L822 733 H792 L762 763 H738 L706 733 H676 L644 763 H620 L590 733 H535 C505 733 495 745 480 768 C452 810 412 833 370 833 C300 833 243 775 243 690 C243 610 300 558 370 558 C420 558 465 575 493 605 C505 620 512 633 530 633 Z" fill="#ffffff" stroke="#111214" stroke-width="30" stroke-linejoin="round"/></g></g>
+        <g transform="translate(13.881317138671879 5.251708984375002) translate(341 678.5) rotate(0) scale(1) translate(-341 -678.5)"><g><path d="M360 641 L322 716" stroke="#111214" stroke-width="38" stroke-linecap="round"/></g></g>
+        
+        <g transform="translate(0 0) translate(1179.1000366210938 367.3000030517578) rotate(0) scale(1) translate(-1179.1000366210938 -367.3000030517578)"><g><g stroke="#1a5cff" stroke-width="32" stroke-linecap="round">
+      <path d="M1123.8 330.4 L1169.7 264.9"/>
+      <path d="M1157.1 378 L1234.4 357.3"/>
+      <path d="M1152 435.9 L1224.5 469.7"/>
+    </g></g></g>
+      </g>
+      
+      
+    </svg>
+</svg>
