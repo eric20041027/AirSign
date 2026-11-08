@@ -235,27 +235,39 @@ Optimistic: B reuses those sittings. S3 is the real test.
 - **Enrollment fingerprint:** `98e6546cb7e2` (the new signature enrolled at 21:45 ET, strength Fair, 1.7 s)
 - **A4 with the screen hidden:** as reported by Eric. Leo watched Eric's 20 owner attempts; about 76 s passed between
   Eric's last attempt and Leo's first, shorter than the 5-minute practice in the protocol.
+- **Johnny's A4 (added 10:55–10:59 ET):** Johnny watched Eric demonstrate the signature, then made 40 attempts in
+  4 minutes; his first counted attempt came 17 s after the demonstration, so he also skipped the 5-minute practice.
+  Whether the screen was hidden was not recorded.
 
 | Tester | Scenario | Logged | Accepted | Similarity |
 |---|---|---|---|---|
 | Eric | A1-owner | 20 | **20** (Wilson 95% 84–100%) | median 79, min 76 |
 | Leo | A4-skilled | 10 | **0** (Wilson 95% 0–28%) | 68–74, closest 1.010× the threshold |
+| Johnny | A4-skilled | 40 | **0** (Wilson 95% 0–9%) | 44–62, median 54.5, closest 1.484× the threshold |
 
-**Not run, by decision at 10:13 ET** (less than 2 hours before the deadline): S3 on the old signature `6f1a57e8182d`,
-Johnny's A4, and Mac 2. So the pre-registered tests that needed them (1.35 on the old signature, cross-time
-enrollment) have no S3 data and stay unresolved.
+Imitators on the new signature together: **0/50** (Wilson 95% 0–7%).
+
+**Not run, by decision at 10:13 ET** (less than 2 hours before the deadline): S3 on the old signature `6f1a57e8182d`
+and Mac 2. So the pre-registered tests that needed them (1.35 on the old signature, cross-time enrollment) have no
+S3 data and stay unresolved. Johnny's A4 was added afterwards, at 10:55 ET.
 
 **Applying the 1.35 rule to the new signature:** 2 of Leo's 10 attempts (similarity 74 and 73) would have passed at
 1.35, so the factor stays **1.25**.
 
 **What it shows:** the simpler signature held up overnight for the owner (20/20, versus 18/25 and 19/40 for the
-complex one a few hours after enrolling), but a practised imitator came within 1 point of the pass mark (74 vs 75),
-closer than anyone came to the complex signature (72). Simpler is steadier and easier to copy: the trade-off the
-strength meter is there to balance.
+complex one a few hours after enrolling), but an imitator who watched 20 tries came within 1 point of the pass mark (74 vs 75),
+closer than anyone came to the complex signature (72). Johnny, after watching a demonstration, never came closer
+than 62 in 40 attempts. Simpler is steadier and easier to copy: the trade-off the strength meter is there to balance.
 
 **Anomalies:**
 - Leo's 10 attempts were logged with the scenario still on `A1-owner` (tester `Leo`). Relabeled to `A4-skilled`;
   each file keeps `relabeledFrom` and `relabelNote`, and the originals are backed up on Mac 1.
+- **One record excluded:** `attempt-20261108-105523-260` (10:55:23 ET, accepted, 0.875× the threshold, 2.9 s) was
+  logged under Johnny's `A4-skilled` labels, but Eric reports it was his own demonstration for Johnny, made after the
+  lab fields were already set. It is excluded on that report: the file is moved out of the logs to
+  `.local/excluded-records/` on Mac 1, and the full log folder was backed up first. It is longer than any of Eric's
+  other attempts on this signature (1.18–2.52 s), consistent with a slowed-down demonstration. Its grip reading (2.65)
+  is close to Eric's S3 range (1.83–2.58) and far from Johnny's (10.06–15.43), which also supports Eric's report.
 
 ## S3-morning, Mac 2
 
