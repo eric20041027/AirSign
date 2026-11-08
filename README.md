@@ -22,7 +22,8 @@
   <a href="#what-we-measured">What we measured</a> ·
   <a href="#install">Install</a> ·
   <a href="#security-model">Security model</a> ·
-  <a href="#roadmap">Roadmap</a>
+  <a href="#roadmap">Roadmap</a> ·
+  <a href="docs/technical-guide-zh.md">中文技術文件</a>
 </p>
 
 ---
