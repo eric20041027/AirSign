@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs><filter id="sh" x="-10%" y="-10%" width="120%" height="125%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity=".22"/></filter></defs>
   <rect x="100" y="100" width="824" height="824" rx="185" fill="#ffffff" filter="url(#sh)"/>
-  <svg x="100" y="100" width="824" height="824" viewBox="105.95 -80.14 1286.86 1286.86">
+  <svg x="100" y="100" width="824" height="824" viewBox="215.99 29.49 1067.02 1067.02">
       
       <g id="iconContent">
         <g transform="translate(0.0 1.5158081054687504) translate(939 399.5) rotate(0) scale(0.9142271899898136) translate(-939 -399.5)"><g><path d="M817.5 415 C817.5 338 872.5 294 942.5 294 C1014.5 294 1060.5 342 1060.5 405 V505" fill="none" stroke="#111214" stroke-width="48" stroke-linecap="round"/></g></g>
