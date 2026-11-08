@@ -408,7 +408,7 @@ final class AppModel: ObservableObject {
                 ? Self.describe(verdict)
                 : "Recognized" + (verdict.similarity.map { " (similarity \($0)%)" } ?? "") + "."
             let foreign = outcome.wrongKey.map { "\($0.lastPathComponent): locked on a Mac that isn't paired with this one. Use its recovery code." }
-            report(heading: heading, outcome: outcome, extra: foreign)
+            report(heading: heading, outcome: outcome, extra: foreign, stayOnScreen: true)
         } catch {
             say("Could not read AirSign's keys: \(error.localizedDescription)", .bad)
         }
@@ -520,12 +520,18 @@ final class AppModel: ObservableObject {
         return outcome
     }
 
-    private func report(heading: String, outcome: UnlockOutcome, extra: [String]) {
+    /// `stayOnScreen` keeps a signature unlock on its result, so the signature can still be turned and shown.
+    private func report(heading: String, outcome: UnlockOutcome, extra: [String], stayOnScreen: Bool = false) {
         let lines = [heading] + outcome.restored.map { "Unlocked \($0.lastPathComponent)" } + extra + outcome.errors
         let allDone = outcome.wrongKey.isEmpty && outcome.errors.isEmpty
         say(lines.joined(separator: "\n"), allDone ? .good : .bad)
         if !outcome.restored.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(outcome.restored) }
-        if allDone { screen = profile == nil ? .enroll : .home }
+        if allDone, !stayOnScreen { screen = profile == nil ? .enroll : .home }
+    }
+
+    /// A signature unlock that opened everything: the unlock screen now only shows the result.
+    var unlockFinished: Bool {
+        screen == .unlock && pendingUnlock.isEmpty && lastVerdict?.accepted == true
     }
 
     // MARK: - Proving identity (change signature, open the test lab)

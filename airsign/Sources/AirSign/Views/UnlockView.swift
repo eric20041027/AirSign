@@ -28,13 +28,20 @@ struct UnlockView: View {
                 isCapturing: model.isCapturing
             )
             HStack {
-                if !model.identityNeedsCode {
-                    CaptureButton()
-                        .disabled(model.profile == nil || model.lockoutRemaining != nil)
+                if model.unlockFinished {
+                    Spacer()
+                    Button("Done") { model.cancelToHome() }
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                } else {
+                    if !model.identityNeedsCode {
+                        CaptureButton()
+                            .disabled(model.profile == nil || model.lockoutRemaining != nil)
+                    }
+                    Button("Use recovery code…") { showRecovery = true }
+                    Spacer()
+                    Button("Cancel") { model.cancelToHome() }
                 }
-                Button("Use recovery code…") { showRecovery = true }
-                Spacer()
-                Button("Cancel") { model.cancelToHome() }
             }
         }
         // A sheet keeps the Space shortcut away from the code field.
