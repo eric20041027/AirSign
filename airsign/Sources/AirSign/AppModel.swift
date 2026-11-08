@@ -525,7 +525,8 @@ final class AppModel: ObservableObject {
         let lines = [heading] + outcome.restored.map { "Unlocked \($0.lastPathComponent)" } + extra + outcome.errors
         let allDone = outcome.wrongKey.isEmpty && outcome.errors.isEmpty
         say(lines.joined(separator: "\n"), allDone ? .good : .bad)
-        if !outcome.restored.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(outcome.restored) }
+        // In demo mode Finder would cover the signature the audience is looking at.
+        if !outcome.restored.isEmpty, !demoMode { NSWorkspace.shared.activateFileViewerSelecting(outcome.restored) }
         if allDone, !stayOnScreen { screen = profile == nil ? .enroll : .home }
     }
 
