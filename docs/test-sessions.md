@@ -195,6 +195,39 @@ Score ÷ threshold: median 0.95 (S1 0.79), max 1.15. Similarity: median 76, min 
 
 ---
 
+## S4-extra, Mac 1 (extra owner data)
+
+- **Session:** S4-extra, 21:11–21:36 ET
+- **Mac:** Mac 1, MacBook Pro; owner Eric; AirPods Pro 3, `right` bud; 50 Hz
+- **Enrollment fingerprint:** `6f1a57e8182d` (the S1 one)
+- **Build:** from 21:06 ET Mac 1 runs branch `feat/enroll-confirm-3d` (new UI; matcher and 1.25 factor unchanged)
+
+| Tester | Scenario | Logged | Accepted |
+|---|---|---|---|
+| Eric | A1-owner | 42 | 19 |
+| Eric | A1-owner, without two false starts (0.8 s and 1.9 s, both rejected) | 40 | 19 |
+
+Score ÷ threshold: median 1.01 (S1 0.79, S2 0.95). Duration median 4.96 s (S1 5.22 s), so pace alone doesn't explain
+the drop. 5 of the 40 scored worse than the closest S1 imitator on Mac 1 (1.099× the threshold), so no threshold alone
+fixes the drift. At the candidate factor 1.35: 34/40, with all 111 S1 imitator attempts still rejected.
+
+**New signature.** At 21:45 ET Eric enrolled a new, simpler signature (`98e6546cb7e2`, strength Fair: 1.7 s, 3.9 rad,
+37 changes of direction). In the same sitting it passed 79/79 (S4-extra). No imitator has tried it yet. The old
+profile is kept so S3 can test both.
+
+**Cross-time enrollment replay** (pre-registered in [test-protocol.md](test-protocol.md); S3 untouched): templates A =
+the 3 S1 enrollment records (worst pair); B = A plus the first accepted S2 and the first accepted S4 attempt (mean
+pair). Each arm's factor = 0.95 × the largest that rejects every S1 imitator on Mac 1 (A 1.305, B 1.192).
+
+| Owner attempts | A | B |
+|---|---|---|
+| S2, the 24 not used as templates | 20/24 | 24/24 |
+| S4, the 39 not used as templates (no false starts) | 28/39 | 36/39 |
+
+Optimistic: B reuses those sittings. S3 is the real test.
+
+---
+
 ## S3-morning, Mac 1
 
 - **Session:** S3-morning
