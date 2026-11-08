@@ -23,9 +23,10 @@ public struct FileLocker {
     }
 
     public func lock(_ url: URL, masterKey: SymmetricKey, recoveryPublicKey: Curve25519.KeyAgreement.PublicKey) throws -> URL {
-        let plaintext = try readLockable(url)
-        let sealed = try LockedFile.seal(plaintext, originalName: url.lastPathComponent,
-                                         masterKey: masterKey, recoveryPublicKey: recoveryPublicKey)
+        let isFolder = try Self.isFolder(url)
+        let plaintext = isFolder ? try FolderArchive.zip(url, maxBytes: Self.maxBytes) : try readLockable(url)
+        let sealed = try LockedFile.seal(plaintext, originalName: url.lastPathComponent, masterKey: masterKey,
+                                         recoveryPublicKey: recoveryPublicKey, kind: isFolder ? LockedFileHeader.folderKind : nil)
         let target = uniqueLockedURL(for: url)
         do {
             try sealed.write(to: target, options: .withoutOverwriting)
@@ -50,11 +51,17 @@ public struct FileLocker {
             throw FileLockerError.unreadable
         }
         let opened = try open(data)
-        let target = uniqueRestoreURL(in: url.deletingLastPathComponent(), name: Self.safeName(opened.name))
+        // `open` succeeded, so the header (which says file or folder) is authentic.
+        let isFolder = (try? LockedFile.header(of: data))?.kind == LockedFileHeader.folderKind
+        let target = uniqueRestoreURL(in: url.deletingLastPathComponent(), name: Self.safeName(opened.name), isFolder: isFolder)
         do {
-            try opened.plaintext.write(to: target, options: .withoutOverwriting)
+            if isFolder {
+                try FolderArchive.unzip(opened.plaintext, to: target)
+            } else {
+                try opened.plaintext.write(to: target, options: .withoutOverwriting)
+            }
         } catch {
-            throw FileLockerError.writeFailed(error.localizedDescription)
+            throw (error as? FileLockerError) ?? FileLockerError.writeFailed(error.localizedDescription)
         }
         do {
             try trash(url)
@@ -66,11 +73,14 @@ public struct FileLocker {
 
     // MARK: - Private
 
-    private func readLockable(_ url: URL) throws -> Data {
-        guard url.pathExtension.lowercased() != Self.lockedExtension else { throw FileLockerError.alreadyLocked }
+    private static func isFolder(_ url: URL) throws -> Bool {
+        guard url.pathExtension.lowercased() != lockedExtension else { throw FileLockerError.alreadyLocked }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else { throw FileLockerError.unreadable }
-        guard !isDirectory.boolValue else { throw FileLockerError.isDirectory }
+        return isDirectory.boolValue
+    }
+
+    private func readLockable(_ url: URL) throws -> Data {
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
         guard size <= Self.maxBytes else { throw FileLockerError.tooLarge }
         do {
@@ -92,11 +102,12 @@ public struct FileLocker {
         return candidate
     }
 
-    /// `name.ext`, then `name (unlocked).ext`, then `name (unlocked 2).ext`.
-    private func uniqueRestoreURL(in dir: URL, name: String) -> URL {
+    /// `name.ext`, then `name (unlocked).ext`, then `name (unlocked 2).ext`. A folder's whole name is the stem.
+    private func uniqueRestoreURL(in dir: URL, name: String, isFolder: Bool = false) -> URL {
         let candidate = dir.appendingPathComponent(name)
         guard FileManager.default.fileExists(atPath: candidate.path) else { return candidate }
-        let ext = (name as NSString).pathExtension, stem = (name as NSString).deletingPathExtension
+        let ext = isFolder ? "" : (name as NSString).pathExtension
+        let stem = isFolder ? name : (name as NSString).deletingPathExtension
         let suffix = ext.isEmpty ? "" : ".\(ext)"
         var n = 1
         while true {
