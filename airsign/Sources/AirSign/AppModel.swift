@@ -403,7 +403,10 @@ final class AppModel: ObservableObject {
                     + "and signature open its files here too.", .warn)
                 return
             }
-            let heading = current.demoMode ? Self.describe(verdict) : "Recognized."
+            // Outside demo mode the similarity shows only after a pass, so it can't guide an imitator.
+            let heading = current.demoMode
+                ? Self.describe(verdict)
+                : "Recognized" + (verdict.similarity.map { " (similarity \($0)%)" } ?? "") + "."
             let foreign = outcome.wrongKey.map { "\($0.lastPathComponent): locked on a Mac that isn't paired with this one. Use its recovery code." }
             report(heading: heading, outcome: outcome, extra: foreign)
         } catch {
@@ -739,12 +742,14 @@ final class AppModel: ObservableObject {
 
     private static func describe(_ verdict: Verdict) -> String {
         let numbers = "score \(format(verdict.score)) vs threshold \(format(verdict.threshold))"
+        let similarity = verdict.similarity.map { "\($0)%" } ?? "–"
         switch verdict.rejection {
         case .wrongBud: return "Not recognized: wrong AirPod side."
         case .wrongDevice: return "Not recognized: different AirPods."
-        case .scoreTooHigh: return "Not recognized: signature doesn't match (\(numbers))."
+        case .scoreTooHigh:
+            return "Not recognized: similarity \(similarity), unlocks at \(SimilarityConfig.passMark)% (\(numbers))."
         case .deviceUnknown: return "Set the sound output to your AirPods (Control Center → Sound), then sign again. This try was not counted."
-        case nil: return "Recognized (\(numbers))."
+        case nil: return "Recognized: similarity \(similarity) (\(numbers))."
         }
     }
 

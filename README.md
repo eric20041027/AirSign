@@ -32,6 +32,8 @@ Think of it as a second lock for personal files: even if someone uses your unloc
 
 Gates 2–4 feed a single dynamic-time-warping score compared against your three enrolled signatures. The threshold is 1.25 × the largest difference between your own enrolled signatures, so it adapts to how consistent you are. In demo mode the app also lights up which gate differed most.
 
+The app shows the result as a **similarity**: 100% − 25 × score ÷ threshold, so 100% is identical to an enrolled signature, 80% is as far apart as your own enrolled signatures, and 75% is the threshold: it unlocks at 75% or above. It is a closeness score, not the probability that it's you. In the first test session, owners scored 75–85% on 40 of 41 attempts, and none of 111 imitations reached 75% (the closest was 72%). Outside demo mode the similarity appears only after a pass, so it can't guide an imitator.
+
 **Encryption**
 
 - Each file gets its own random 256-bit key and is sealed with AES-GCM. The header is authenticated together with the content, so editing or renaming it breaks decryption.
@@ -56,7 +58,7 @@ Requirements: macOS 14 or later; AirPods Pro, AirPods (3rd or 4th generation) or
 ```bash
 git clone https://github.com/eric20041027/AirSign.git
 cd AirSign/airsign
-swift test                # 46 tests
+swift test                # 52 tests
 scripts/install.sh        # builds, signs, installs to ~/Applications, registers the Finder items
 ```
 
