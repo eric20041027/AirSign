@@ -44,11 +44,21 @@ Every section is checked against these rules:
    exactly this. From now on no record is deleted: to start over, rename the `test-logs` folder and keep it.
 2. **Mac 2 relabels need provenance.** 3 enroll records (owner Eric → Leo) and 10 A2-zero-effort records (saved
    as A5-other-bud). Each file needs `relabeledFrom` and `relabelNote`, as on Mac 1, before the logs go to Johnny.
-3. **Mac 2 S1 make-ups in S3.** Eric's A2 (10), A3 (10) and A4 (15, screen visible as in S1), and Leo's
-   A5-other-pair (10) were skipped. Record them in S3 with Session = `S1-tonight` (they are S1 scenarios; each
-   record's timestamp shows when it was really made), before the S3 A4 with the screen hidden. Eric has already
-   seen Leo sign during S1, so his A3 is closer to A4 than to "watched once"; report it that way.
-4. **A4 over target on Mac 1.** Johnny logged 16 and Leo 20 against 15. All are kept. None was accepted, so the S1
+3. **Mac 2 S1 items skipped, not made up.** Eric's A2 (10), A3 (10) and A4 (15), and Leo's A5-other-pair (10)
+   were not done, and the team decided not to make them up in S3 (time goes to the demo build instead). Effects:
+   - Leo's signature faces one imitator in S1 (Johnny) instead of two. Eric still attacks it in S3 (A4 with the
+     screen hidden, 10), so two different people attack each owner overall.
+   - A5-other-pair has run only on Mac 1 (10/10 rejected). Gate 1 compares the device ID, so the result doesn't
+     depend on which Mac runs it.
+   - After S3 there are about 151 imitator attempts instead of 186: if none is accepted, the 95% upper bound on
+     the imitator acceptance rate is about 2.0% instead of 1.6%.
+   - Eric had already seen Leo sign during S1, so an A3 by Eric would not have been "watched once" anyway.
+4. **Leo's enrolled signature is short.** Median 1.2 s and 2.7 rad of wrist turning, under the strength floors
+   (1.5 s, 3 rad) that branch `feat/enroll-confirm-3d` adds, so the new build would refuse it (Eric's: 5.4 s,
+   10.3 rad, strong). Mac 2's results are therefore for a signature the new policy calls weak; Johnny's 35
+   attempts on it were all rejected, the closest at 1.34× the threshold (Leo's own highest was 1.17×). Don't
+   re-enroll Mac 2 before S3 is done, even after the new build is installed.
+5. **A4 over target on Mac 1.** Johnny logged 16 and Leo 20 against 15. All are kept. None was accepted, so the S1
    result doesn't depend on which 15 are used.
 
 ## Sample rates
@@ -110,14 +120,14 @@ different device.
 | Tester | Scenario | Logged | Accepted | Target | Left |
 |---|---|---|---|---|---|
 | Leo | A1-owner | 21 | 20 | 20 | 0 |
-| Eric | A2-zero-effort | 0 | 0 | 10 | 10 (make up in S3) |
-| Eric | A3-watched-once | 0 | 0 | 10 | 10 (make up in S3) |
-| Eric | A4-skilled | 0 | 0 | 15 | 15 (make up in S3) |
+| Eric | A2-zero-effort | 0 | 0 | 10 | 10 (skipped) |
+| Eric | A3-watched-once | 0 | 0 | 10 | 10 (skipped) |
+| Eric | A4-skilled | 0 | 0 | 15 | 15 (skipped) |
 | Johnny | A2-zero-effort | 10 | 0 | 10 | 0 |
 | Johnny | A3-watched-once | 10 | 0 | 10 | 0 |
 | Johnny | A4-skilled | 15 | 0 | 15 | 0 |
 | Leo | A5-other-bud | 10 | 0 | 10 | 0 |
-| Leo | A5-other-pair | 0 | 0 | 10 | 10 (make up in S3) |
+| Leo | A5-other-pair | 0 | 0 | 10 | 10 (skipped) |
 
 **Discarded tally:**
 
@@ -133,7 +143,7 @@ different device.
 - **18:35 ET:** Initial 21 `A1-owner` attempts were signed before clicking `Re-enroll owner (logged)` in the test lab (using the prior normal-mode profile without logged `mode: "enroll"` records); cleared at 18:45 ET before re-enrolling.
 - **18:53 ET:** First logged test-lab enrollment (`09b7490a5112`) had high template drift (12/20 accepted on `A1-owner` and 3 failed lab-entry checks). At 18:55 ET, before any imitator attempts began, `profile.bin` and `test-logs` were reset and the owner re-enrolled (`c468b7f068e6`).
 - **18:56 ET:** During `Re-enroll owner (logged)` for `c468b7f068e6`, the `Owner` field was still at the default `"Eric"` before being switched to `"Leo"` for `A1-owner`; the 3 `enroll` record labels were corrected to `owner: "Leo"`, `tester: "Leo"` at 19:32 ET.
-- **19:05 ET:** Johnny's 10 `A2-zero-effort` attempts were recorded while the scenario dropdown remained on `A5-other-bud` from the preceding run; relabeled to `A2-zero-effort` at 19:32 ET.
+- **19:24–19:25 ET** (file times; first noted as 19:05): Johnny's 10 `A2-zero-effort` attempts were recorded while the scenario dropdown remained on `A5-other-bud` from the preceding run; relabeled to `A2-zero-effort` at 19:32 ET.
 - **19:31 ET:** `Eric` imitator scenarios (`A2`–`A4`) and `A5-other-pair` were skipped in `S1-tonight`.
 
 ---
@@ -211,14 +221,8 @@ different device.
 | Tester | Scenario | Logged | Accepted | Target | Left |
 |---|---|---|---|---|---|
 | Leo | A1-owner | – | – | 20 | – |
-| Eric | A2-zero-effort, S1 make-up | – | – | 10 | – |
-| Eric | A3-watched-once, S1 make-up | – | – | 10 | – |
-| Eric | A4-skilled, S1 make-up (screen visible) | – | – | 15 | – |
-| Leo | A5-other-pair, S1 make-up | – | – | 10 | – |
 | Eric | A4-skilled | – | – | 10 | – |
 | Johnny | A4-skilled | – | – | 10 | – |
-
-The S1 make-ups are recorded with Session = `S1-tonight` and done first; then the S3 A4 with the screen hidden.
 
 **Discarded tally:** –
 
