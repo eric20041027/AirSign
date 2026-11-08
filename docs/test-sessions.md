@@ -42,8 +42,10 @@ Every section is checked against these rules:
    [evaluation.md](evaluation.md) must say that Mac 2's owner numbers come from the second enrollment and that the
    first was unsteady. The 3-signature check after enrollment (branch `feat/enroll-confirm-3d`) is meant to catch
    exactly this. From now on no record is deleted: to start over, rename the `test-logs` folder and keep it.
-2. **Mac 2 relabels need provenance.** 3 enroll records (owner Eric → Leo) and 10 A2-zero-effort records (saved
-   as A5-other-bud). Each file needs `relabeledFrom` and `relabelNote`, as on Mac 1, before the logs go to Johnny.
+2. **Mac 2 relabels: provenance added (resolved 20:15 ET).** 3 enroll records (owner Eric → Leo) and 10
+   A2-zero-effort records (saved as A5-other-bud) now carry `relabeledFrom` and `relabelNote`, as on Mac 1; no
+   other field changed. All 10 relabeled A2 attempts were scored rather than rejected as the wrong bud, which fits
+   their being A2 attempts with Leo's bud.
 3. **Mac 2 S1 items skipped, not made up.** Eric's A2 (10), A3 (10) and A4 (15), and Leo's A5-other-pair (10)
    were not done, and the team decided not to make them up in S3 (time goes to the demo build instead). Effects:
    - Leo's signature faces one imitator in S1 (Johnny) instead of two. Eric still attacks it in S3 (A4 with the
