@@ -39,7 +39,7 @@ private struct ProgressDots: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(label).frame(width: 52, alignment: .leading)
+            Text(label).fixedSize().frame(width: 64, alignment: .leading)
             ForEach(0..<total, id: \.self) { i in
                 Circle()
                     .fill(i < done ? Color.green : Color.secondary.opacity(0.3))

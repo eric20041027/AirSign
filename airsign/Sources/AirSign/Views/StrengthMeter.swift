@@ -10,7 +10,7 @@ struct StrengthMeter: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                Text("Strength").frame(width: 52, alignment: .leading)
+                Text("Strength").fixedSize().frame(width: 64, alignment: .leading)
                 HStack(spacing: 3) {
                     ForEach(0..<3, id: \.self) { i in
                         RoundedRectangle(cornerRadius: 2)
