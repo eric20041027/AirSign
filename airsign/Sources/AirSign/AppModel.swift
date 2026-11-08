@@ -39,7 +39,8 @@ final class AppModel: ObservableObject {
     /// `open -a AirSign --args --test-mode` adds the test lab. Lab attempts open no files, so they
     /// never count toward the lockout; every other flow keeps it.
     let testMode = CommandLine.arguments.contains("--test-mode")
-    @Published var testOwner = "Eric"
+    /// No default: a pre-filled name got the wrong owner logged on the second Mac.
+    @Published var testOwner = ""
     @Published var testTester = ""
     @Published var testSession = TestSession.tonight
     @Published var testScenario = TestScenario.owner
@@ -163,6 +164,10 @@ final class AppModel: ObservableObject {
         }
         if screen == .lab, testTester.trimmingCharacters(in: .whitespaces).isEmpty {
             say("Type the tester's name first.", .warn)
+            return
+        }
+        if screen == .lab, testOwner.trimmingCharacters(in: .whitespaces).isEmpty {
+            say("Type the owner's name first.", .warn)
             return
         }
         guard case .streaming = motionStatus else {
@@ -582,6 +587,10 @@ final class AppModel: ObservableObject {
     /// The owner re-enrolls from inside the lab so the templates' raw motion is logged too.
     func reenrollOwnerFromLab() {
         guard testMode, screen == .lab else { return }
+        guard !testOwner.trimmingCharacters(in: .whitespaces).isEmpty else {
+            say("Type the owner's name first, so the enrollment is logged under the right person.", .warn)
+            return
+        }
         beginIdentityCheck(.changeSignatureFromLab, prompt: "Re-enrolling the owner needs the recovery code: press “Use recovery code…”.")
     }
 
