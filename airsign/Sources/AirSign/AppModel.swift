@@ -104,7 +104,8 @@ final class AppModel: ObservableObject {
         let plain = urls.filter { $0.pathExtension.lowercased() != FileLocker.lockedExtension }
         if !plain.isEmpty { lock(plain) }
         if !locked.isEmpty { beginUnlock(locked) }
-        NSApp.activate()
+        // Locking needs no signature, so Finder keeps the focus; the app comes forward only to sign or to show a problem.
+        if !locked.isEmpty || tone == .bad || tone == .warn { NSApp.activate() }
     }
 
     func lock(_ urls: [URL]) {
