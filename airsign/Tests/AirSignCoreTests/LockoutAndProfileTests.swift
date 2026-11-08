@@ -13,6 +13,48 @@ import Testing
     #expect(l.remaining(now: t0.addingTimeInterval(305)) == nil)
 }
 
+@Test func repeatedLockoutsLastLongerUntilASuccess() {
+    var l = Lockout()
+    var t = Date(timeIntervalSince1970: 0)
+    let lockOnce = { for _ in 0..<5 { l.recordFailure(now: t) } }
+    lockOnce()
+    #expect(l.remaining(now: t) == 300)
+    t = t.addingTimeInterval(301)
+    lockOnce()
+    #expect(l.remaining(now: t) == 900)
+    t = t.addingTimeInterval(901)
+    lockOnce()
+    #expect(l.remaining(now: t) == 3600)
+    t = t.addingTimeInterval(3601)
+    lockOnce()
+    #expect(l.remaining(now: t) == 14400)
+    t = t.addingTimeInterval(14401)
+    lockOnce()
+    #expect(l.remaining(now: t) == 14400)
+    l.recordSuccess()
+    lockOnce()
+    #expect(l.remaining(now: t) == 300)
+}
+
+@Test func lockoutDecodesProfilesSavedBeforeEscalation() throws {
+    let l = try JSONDecoder().decode(Lockout.self, from: Data(#"{"failures":3}"#.utf8))
+    #expect(l.failures == 3 && l.lockedUntil == nil && l.lockCount == 0)
+}
+
+@Test func restoringAnOlderProfileFileKeepsTheFailureCount() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let store = ProfileStore(directory: dir, secrets: InMemorySecretStore())
+    let e = try enroll((0..<3).map { _ in Signature(samples: strokes(ownerShape, noise: 0.2)) }, deviceUID: "UID-A")
+    var p = Profile(enrollment: e, recoveryPublicKey: Data(repeating: 3, count: 32), lockout: Lockout(), demoMode: false)
+    try store.save(p)
+    let file = dir.appendingPathComponent("profile.bin")
+    let snapshot = try Data(contentsOf: file)
+    for _ in 0..<4 { p.lockout.recordFailure(now: Date()) }
+    try store.save(p)
+    try snapshot.write(to: file)   // someone puts the old copy back to reset the count
+    #expect(try store.load()?.lockout.failures == 4)
+}
+
 @Test func successResetsFailures() {
     var l = Lockout()
     for _ in 0..<4 { l.recordFailure(now: Date()) }

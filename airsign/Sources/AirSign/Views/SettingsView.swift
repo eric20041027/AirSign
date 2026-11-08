@@ -21,8 +21,18 @@ struct SettingsView: View {
                 }
             }
             if let enrollment = model.profile?.enrollment {
-                Text("Enrolled with the \(enrollment.side.rawValue) AirPod · \(enrollment.templates.count) signatures · threshold \(AppModel.format(enrollment.threshold))")
-                    .foregroundStyle(.secondary)
+                HStack {
+                    Text("Enrolled with the \(enrollment.side.rawValue) AirPod · \(enrollment.templates.count) signatures"
+                         + (enrollment.addedCount > 0 ? " (\(enrollment.addedCount) added after unlocking)" : "")
+                         + " · threshold \(AppModel.format(enrollment.threshold))")
+                        .foregroundStyle(.secondary)
+                    if enrollment.addedCount > 0 {
+                        Button("Remove added signatures") { model.removeAddedSamples() }
+                    }
+                }
+            }
+            if let strength = model.enrolledStrength {
+                StrengthMeter(strength: strength, isEnrolling: false)
             }
             HStack {
                 Text("Paired Macs: \(model.pairedMacCount)").foregroundStyle(.secondary)

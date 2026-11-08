@@ -17,6 +17,10 @@ public struct LockedFileHeader: Codable {
     /// HPKE encapsulated key and the data key sealed to the recovery public key.
     public var recoveryEncapsulated: Data
     public var recoveryWrapped: Data
+    /// `nil` for a file (and every file locked before folders existed); `folderKind` when the content is a zipped folder.
+    public var kind: String?
+
+    public static let folderKind = "folder"
 }
 
 /// `.airsign` layout: magic(8) | header length UInt32 big-endian | header JSON | AES-GCM combined content.
@@ -29,7 +33,7 @@ public enum LockedFile {
     private static let prefixLength = 12
 
     public static func seal(_ plaintext: Data, originalName: String, masterKey: SymmetricKey,
-                            recoveryPublicKey: Curve25519.KeyAgreement.PublicKey) throws -> Data {
+                            recoveryPublicKey: Curve25519.KeyAgreement.PublicKey, kind: String? = nil) throws -> Data {
         let dataKey = SymmetricKey(size: .bits256)
         let keyBytes = dataKey.withUnsafeBytes { Data($0) }
         var sender = try HPKE.Sender(recipientKey: recoveryPublicKey, ciphersuite: suite, info: hpkeInfo)
@@ -39,7 +43,8 @@ public enum LockedFile {
             createdAt: Date(),
             masterWrapped: try combined(AES.GCM.seal(keyBytes, using: masterKey)),
             recoveryEncapsulated: sender.encapsulatedKey,
-            recoveryWrapped: try sender.seal(keyBytes)
+            recoveryWrapped: try sender.seal(keyBytes),
+            kind: kind
         )
         let headerData = try encoder.encode(header)
         let content = try combined(AES.GCM.seal(plaintext, using: dataKey, authenticating: headerData))
@@ -77,6 +82,11 @@ public enum LockedFile {
 
     public static func header(of data: Data) throws -> LockedFileHeader {
         try parse(data).header
+    }
+
+    /// The header exactly as stored (it is authenticated with the content).
+    public static func headerData(of data: Data) throws -> Data {
+        try parse(data).headerData
     }
 
     // MARK: - Private
