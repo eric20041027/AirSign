@@ -5,8 +5,21 @@ public enum MatcherConfig {
     /// docs/tuning.md on the spike data: at 1.25 the owner passed 35/38 and imitators 1/23 across both rounds.
     /// Tonight's test-lab data (docs/evaluation.md) decides the final value.
     public static let thresholdFactor = 1.25
+    /// Switch to 5 signatures with `.meanPair` only if the enroll5 result in docs/algorithm-comparison.md
+    /// passes the switch rule in docs/algorithm-bakeoff.md; tonight's tests ran on 3 with `.worstPair`.
     public static let enrollCount = 3
+    public static let thresholdRule = ThresholdRule.worstPair
+    /// Signatures right after enrolling that must all pass before the enrollment is kept.
+    public static let confirmCount = 3
     public static let band = 0.25
+}
+
+/// How the threshold summarizes the spread between the enrolled signatures.
+public enum ThresholdRule: Equatable {
+    /// factor × the largest pairwise distance (the frozen baseline, built for 3 signatures)
+    case worstPair
+    /// factor × the mean pairwise distance, which doesn't loosen as more signatures are enrolled
+    case meanPair
 }
 
 public enum MatcherError: Error, Equatable {
@@ -69,29 +82,33 @@ private func gateDistance(_ a: Signature, _ b: Signature, _ gate: Gate) -> Doubl
     distance(a, b, columns: gate.columns, useDuration: gate.usesDuration)
 }
 
-private func worstPair(_ templates: [Signature], _ measure: (Signature, Signature) -> Double) -> Double {
-    var worst = 0.0
+private func spread(_ templates: [Signature], _ rule: ThresholdRule, _ measure: (Signature, Signature) -> Double) -> Double {
+    var pairs: [Double] = []
     for i in templates.indices {
         for j in templates.indices where j > i {
-            worst = max(worst, measure(templates[i], templates[j]))
+            pairs.append(measure(templates[i], templates[j]))
         }
     }
-    return worst
+    guard !pairs.isEmpty else { return 0 }
+    switch rule {
+    case .worstPair: return pairs.max() ?? 0
+    case .meanPair: return pairs.reduce(0, +) / Double(pairs.count)
+    }
 }
 
-public func enroll(_ sigs: [Signature], deviceUID: String?) throws -> Enrollment {
+public func enroll(_ sigs: [Signature], deviceUID: String?, rule: ThresholdRule = MatcherConfig.thresholdRule) throws -> Enrollment {
     guard sigs.count >= MatcherConfig.enrollCount else { throw MatcherError.needAtLeast(MatcherConfig.enrollCount) }
     guard let side = sigs.first?.side, sigs.allSatisfy({ $0.side == side }) else { throw MatcherError.mixedSides }
     let factor = MatcherConfig.thresholdFactor
     var gateThresholds: [Gate: Double] = [:]
     for gate in Gate.allCases {
-        gateThresholds[gate] = factor * worstPair(sigs) { gateDistance($0, $1, gate) }
+        gateThresholds[gate] = factor * spread(sigs, rule) { gateDistance($0, $1, gate) }
     }
     return Enrollment(
         templates: sigs,
         side: side,
         deviceUID: deviceUID,
-        threshold: factor * worstPair(sigs) { distance($0, $1) },
+        threshold: factor * spread(sigs, rule) { distance($0, $1) },
         gateThresholds: gateThresholds
     )
 }
