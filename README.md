@@ -17,7 +17,7 @@ Think of it as a second lock for personal files: even if someone uses your unloc
 
 ## How it works
 
-1. **Enroll.** Hold one AirPod in your signing hand with a finger over its in-ear sensor, keep the other one in the case, and sign in the air three times (about 2 seconds each). AirSign records which AirPods and which bud you used and shows a recovery code once.
+1. **Enroll.** Hold one AirPod in your signing hand with a finger over its in-ear sensor, keep the other one in the case, and sign in the air three times (about 2 seconds each), then three more times as a check: if any check doesn't match, the enrollment wasn't steady enough and you start over. AirSign records which AirPods and which bud you used and shows a recovery code once. The preview draws your signature in 3-D; drag it to look from any angle.
 2. **Lock.** In Finder, right-click a file → **Lock with AirSign**. It becomes `name.ext.airsign`. The original moves to the Trash only after the locked copy has been decrypted in memory and checked byte for byte.
 3. **Unlock.** Right-click the `.airsign` file → **Unlock with AirSign**, press Space, sign, hold still.
 

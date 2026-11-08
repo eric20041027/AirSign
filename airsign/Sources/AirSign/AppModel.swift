@@ -24,6 +24,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var tone: Tone = .neutral
     @Published private(set) var lastVerdict: Verdict?
     @Published private(set) var enrolledSoFar: [Signature] = []
+    /// Built from the enrolled signatures; kept only after `MatcherConfig.confirmCount` checks all pass.
+    @Published private(set) var pendingEnrollment: Enrollment?
+    @Published private(set) var confirmations = 0
     @Published private(set) var isReenrolling = false
     @Published private(set) var recoveryCodeToShow: String?
     @Published private(set) var pendingUnlock: [URL] = []
@@ -217,7 +220,12 @@ final class AppModel: ObservableObject {
 
     private func complete(_ signature: Signature, rows: [MotionSample]) {
         switch screen {
-        case .enroll: addEnrollment(signature, rows: rows)
+        case .enroll:
+            if pendingEnrollment != nil {
+                checkEnrollment(signature)
+            } else {
+                addEnrollment(signature, rows: rows)
+            }
         case .unlock: verifyAndUnlock(signature)
         case .confirmIdentity: confirmIdentity(signature)
         case .lab: labVerify(signature, rows: rows)
@@ -249,7 +257,42 @@ final class AppModel: ObservableObject {
             return
         }
         do {
-            let enrollment = try enroll(enrolledSoFar, deviceUID: deviceUID)
+            pendingEnrollment = try enroll(enrolledSoFar, deviceUID: deviceUID)
+            confirmations = 0
+            say("Now sign \(MatcherConfig.confirmCount) more times the same way, to check AirSign recognizes you.", .good)
+        } catch {
+            clearEnrollment()
+            say("Could not build the signature: \(error.localizedDescription). Start again.", .bad)
+        }
+    }
+
+    /// Every check must pass; one miss means the enrolled signatures weren't steady enough to rely on.
+    private func checkEnrollment(_ signature: Signature) {
+        guard let candidate = pendingEnrollment else { return }
+        let verdict = verify(signature, deviceUID: AudioDeviceIdentity.headphoneUID(), against: candidate)
+        if verdict.rejection == .deviceUnknown {
+            say(Self.describe(verdict), .warn)
+            return
+        }
+        guard verdict.accepted else {
+            let check = confirmations + 1
+            clearEnrollment()
+            say("Check \(check) of \(MatcherConfig.confirmCount) didn't match, so the enrolled signatures weren't steady enough. "
+                + "Enroll again, signing the same way each time.", .bad)
+            return
+        }
+        confirmations += 1
+        guard confirmations >= MatcherConfig.confirmCount else {
+            say("Check \(confirmations) of \(MatcherConfig.confirmCount) passed. Sign again.", .good)
+            return
+        }
+        finalizeEnrollment(candidate)
+    }
+
+    private func finalizeEnrollment(_ enrollment: Enrollment) {
+        pendingEnrollment = nil
+        confirmations = 0
+        do {
             if isReenrolling, var updated = profile {
                 updated.enrollment = enrollment
                 updated.lockout.recordSuccess()
@@ -303,6 +346,8 @@ final class AppModel: ObservableObject {
     private func clearEnrollment() {
         enrolledSoFar = []
         enrolledRows = []
+        pendingEnrollment = nil
+        confirmations = 0
     }
 
     // MARK: - Unlock

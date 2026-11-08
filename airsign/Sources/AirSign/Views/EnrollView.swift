@@ -8,15 +8,11 @@ struct EnrollView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(model.isReenrolling ? "Choose your new air signature" : "Enroll your air signature")
                 .font(.title2.bold())
-            Text("Hold one AirPod in your signing hand with a finger over its sensor, and keep the other one in the case. Press Space, sign in the air for about 2 seconds, then hold still.")
+            Text("Hold one AirPod in your signing hand with a finger over its sensor, and keep the other one in the case. Press Space, sign in the air for about 2 seconds, then hold still. After \(MatcherConfig.enrollCount) signatures, sign \(MatcherConfig.confirmCount) more times so AirSign can check it recognizes you.")
                 .foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                ForEach(0..<MatcherConfig.enrollCount, id: \.self) { i in
-                    Circle()
-                        .fill(i < model.enrolledSoFar.count ? Color.green : Color.secondary.opacity(0.3))
-                        .frame(width: 14, height: 14)
-                }
-                Text("\(model.enrolledSoFar.count) of \(MatcherConfig.enrollCount)").monospacedDigit()
+            ProgressDots(label: "Enroll", done: model.enrolledSoFar.count, total: MatcherConfig.enrollCount)
+            if model.pendingEnrollment != nil {
+                ProgressDots(label: "Check", done: model.confirmations, total: MatcherConfig.confirmCount)
             }
             SignaturePad(path: model.livePath, templates: model.enrolledSoFar, lights: nil, gateOne: nil,
                          latestColor: .blue, isCapturing: model.isCapturing)
@@ -29,6 +25,24 @@ struct EnrollView: View {
                     Button("Cancel") { model.cancelToHome() }
                 }
             }
+        }
+    }
+}
+
+private struct ProgressDots: View {
+    var label: String
+    var done: Int
+    var total: Int
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(label).frame(width: 52, alignment: .leading)
+            ForEach(0..<total, id: \.self) { i in
+                Circle()
+                    .fill(i < done ? Color.green : Color.secondary.opacity(0.3))
+                    .frame(width: 14, height: 14)
+            }
+            Text("\(done) of \(total)").monospacedDigit()
         }
     }
 }
