@@ -35,13 +35,27 @@ Every section is checked against these rules:
 
 ## Open issues
 
-None yet.
+1. **Mac 2 enrollment (check 2 not met).** Before the enrollment now in use (`c468b7f068e6`), 21 A1-owner
+   attempts made on an unlogged normal-mode profile were cleared (18:45 ET), and a first logged enrollment
+   (`09b7490a5112`: owner 12/20 accepted, 3 failed lab-entry checks) was reset together with its records at
+   18:55 ET, before any imitator attempt. Those records were deleted; if a copy turns up, keep it.
+   [evaluation.md](evaluation.md) must say that Mac 2's owner numbers come from the second enrollment and that the
+   first was unsteady. The 3-signature check after enrollment (branch `feat/enroll-confirm-3d`) is meant to catch
+   exactly this. From now on no record is deleted: to start over, rename the `test-logs` folder and keep it.
+2. **Mac 2 relabels need provenance.** 3 enroll records (owner Eric → Leo) and 10 A2-zero-effort records (saved
+   as A5-other-bud). Each file needs `relabeledFrom` and `relabelNote`, as on Mac 1, before the logs go to Johnny.
+3. **Mac 2 S1 make-ups in S3.** Eric's A2 (10), A3 (10) and A4 (15, screen visible as in S1), and Leo's
+   A5-other-pair (10) were skipped. Record them in S3 with Session = `S1-tonight` (they are S1 scenarios; each
+   record's timestamp shows when it was really made), before the S3 A4 with the screen hidden. Eric has already
+   seen Leo sign during S1, so his A3 is closer to A4 than to "watched once"; report it that way.
+4. **A4 over target on Mac 1.** Johnny logged 16 and Leo 20 against 15. All are kept. None was accepted, so the S1
+   result doesn't depend on which 15 are used.
 
 ## Sample rates
 
 | Mac | AirPods | S1 | S2 | S3 |
 |---|---|---|---|---|
-| Mac 1 MacBook Pro (Eric) | AirPods Pro 3 | – | – | – |
+| Mac 1 MacBook Pro (Eric) | AirPods Pro 3 | 50.0 Hz | – | – |
 | Mac 2 MacBook Air (Leo) | AirPods 4 | 25.0 Hz | – | – |
 
 ---
@@ -49,32 +63,39 @@ None yet.
 ## S1-tonight, Mac 1
 
 - **Session:** S1-tonight
-- **Time window (ET):** planned 19:00–21:00; actual –
+- **Time window (ET):** planned 19:00–21:00; actual 18:45–19:18
 - **Mac:** Mac 1, MacBook Pro
 - **Owner:** Eric
-- **AirPods:** AirPods Pro 3, right bud
-- **Measured sample rate:** –
-- **Enrollment fingerprint:** – (records: –)
+- **AirPods:** AirPods Pro 3, `right` bud
+- **Measured sample rate:** 50.0 Hz (median of 120 records)
+- **Enrollment fingerprint:** `6f1a57e8182d` (records: 3, `right` bud)
 
 | Tester | Scenario | Logged | Accepted | Target | Left |
 |---|---|---|---|---|---|
-| Eric | A1-owner | – | – | 20 | – |
-| Leo | A2-zero-effort | – | – | 10 | – |
-| Leo | A3-watched-once | – | – | 10 | – |
-| Leo | A4-skilled | – | – | 15 | – |
-| Johnny | A2-zero-effort | – | – | 10 | – |
-| Johnny | A3-watched-once | – | – | 10 | – |
-| Johnny | A4-skilled | – | – | 15 | – |
-| Eric | A5-other-bud | – | – | 10 | – |
-| Eric | A5-other-pair | – | – | 10 | – |
+| Eric | A1-owner | 20 | 20 | 20 | 0 |
+| Leo | A2-zero-effort | 10 | 0 | 10 | 0 |
+| Leo | A3-watched-once | 10 | 0 | 10 | 0 |
+| Leo | A4-skilled | 20 | 0 | 15 | 0 (5 over) |
+| Johnny | A2-zero-effort | 10 | 0 | 10 | 0 |
+| Johnny | A3-watched-once | 10 | 0 | 10 | 0 |
+| Johnny | A4-skilled | 16 | 0 | 15 | 0 (1 over) |
+| Eric | A5-other-bud | 10 | 0 | 10 | 0 |
+| Eric | A5-other-pair | 10 | 0 | 10 | 0 |
 
-**Discarded tally:**
+A5-other-bud was rejected by gate 1 every time (wrong bud); A5-other-pair (AirPods 4 on Mac 1) every time as a
+different device.
 
-| Tester | Scenario | Discarded |
-|---|---|---|
-| – | – | – |
+**Discarded tally:** none recorded.
 
-**Anomalies:** none recorded yet.
+**Anomalies:**
+- **19:02–19:03 ET:** 5 of Johnny's attempts saved as `A3-watched-once` were A4 (the scenario picker wasn't
+  switched). Relabeled to `A4-skilled`; each file keeps `relabeledFrom`, and the originals are backed up on Mac 1.
+- **Timing:** about 1 min between Johnny's last A3 (19:01:24) and first A4 (19:02:27), and about 3 min for Leo
+  (19:10–19:13), less than the A4 preparation (video ×3, 5 min practice) takes. Eric confirmed both had done the
+  preparation, so all their A4 attempts count.
+- **19:06:07 ET:** one extra `A1-owner` record (rejected, score 0.604 vs threshold 0.596) was Eric demonstrating
+  for an imitator. Marked `mode: "excluded"`, `scenario: "demo"`, with the original labels kept in the file.
+  A1 stays 20/20.
 
 ## S1-tonight, Mac 2
 
@@ -89,14 +110,14 @@ None yet.
 | Tester | Scenario | Logged | Accepted | Target | Left |
 |---|---|---|---|---|---|
 | Leo | A1-owner | 21 | 20 | 20 | 0 |
-| Eric | A2-zero-effort | 0 | 0 | 10 | 10 (skipped) |
-| Eric | A3-watched-once | 0 | 0 | 10 | 10 (skipped) |
-| Eric | A4-skilled | 0 | 0 | 15 | 15 (skipped) |
+| Eric | A2-zero-effort | 0 | 0 | 10 | 10 (make up in S3) |
+| Eric | A3-watched-once | 0 | 0 | 10 | 10 (make up in S3) |
+| Eric | A4-skilled | 0 | 0 | 15 | 15 (make up in S3) |
 | Johnny | A2-zero-effort | 10 | 0 | 10 | 0 |
 | Johnny | A3-watched-once | 10 | 0 | 10 | 0 |
 | Johnny | A4-skilled | 15 | 0 | 15 | 0 |
 | Leo | A5-other-bud | 10 | 0 | 10 | 0 |
-| Leo | A5-other-pair | 0 | 0 | 10 | 10 (skipped) |
+| Leo | A5-other-pair | 0 | 0 | 10 | 10 (make up in S3) |
 
 **Discarded tally:**
 
@@ -190,8 +211,14 @@ None yet.
 | Tester | Scenario | Logged | Accepted | Target | Left |
 |---|---|---|---|---|---|
 | Leo | A1-owner | – | – | 20 | – |
+| Eric | A2-zero-effort, S1 make-up | – | – | 10 | – |
+| Eric | A3-watched-once, S1 make-up | – | – | 10 | – |
+| Eric | A4-skilled, S1 make-up (screen visible) | – | – | 15 | – |
+| Leo | A5-other-pair, S1 make-up | – | – | 10 | – |
 | Eric | A4-skilled | – | – | 10 | – |
 | Johnny | A4-skilled | – | – | 10 | – |
+
+The S1 make-ups are recorded with Session = `S1-tonight` and done first; then the S3 A4 with the screen hidden.
 
 **Discarded tally:** –
 
