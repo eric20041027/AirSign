@@ -23,6 +23,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var message = ""
     @Published private(set) var tone: Tone = .neutral
     @Published private(set) var lastVerdict: Verdict?
+    /// The last unlocking signature, kept only when it passed strongly enough to be added to the enrollment.
+    @Published private(set) var sampleCandidate: Signature?
     @Published private(set) var enrolledSoFar: [Signature] = []
     /// Built from the enrolled signatures; kept only after `MatcherConfig.confirmCount` checks all pass.
     @Published private(set) var pendingEnrollment: Enrollment?
@@ -387,6 +389,7 @@ final class AppModel: ObservableObject {
             return
         }
         lastVerdict = verdict
+        sampleCandidate = verdict.canBecomeSample ? signature : nil
         guard verdict.accepted else {
             adjustLockout(.failure)
             say(current.demoMode ? Self.describe(verdict) : "Not recognized.", .bad)
@@ -462,6 +465,28 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Adds the signature that just unlocked strongly, so AirSign follows how the signature drifts over time.
+    func addSampleFromLastUnlock() {
+        guard var current = profile, let signature = sampleCandidate else { return }
+        do {
+            current.enrollment = try adding(signature, to: current.enrollment)
+            persist(current)
+            sampleCandidate = nil
+            let e = current.enrollment
+            say("Added. AirSign now compares with \(e.templates.count) signatures (\(e.addedCount) added after unlocking); "
+                + "the pass mark didn't change.", .good)
+        } catch {
+            say("Could not add this signature: \(error.localizedDescription)", .bad)
+        }
+    }
+
+    func removeAddedSamples() {
+        guard var current = profile, current.enrollment.addedCount > 0 else { return }
+        current.enrollment = removingAddedSamples(from: current.enrollment)
+        persist(current)
+        say("Removed the added signatures; AirSign compares with your enrolled ones only.", .good)
+    }
+
     func forgetPairedMacs() {
         do {
             try store.forgetPairedMacs()
@@ -487,6 +512,7 @@ final class AppModel: ObservableObject {
 
     func cancelToHome() {
         stopCapture()
+        sampleCandidate = nil
         identityNeedsCode = false
         isReenrolling = false
         returnToLabAfterEnroll = false

@@ -29,6 +29,10 @@ struct UnlockView: View {
             )
             HStack {
                 if model.unlockFinished {
+                    if model.sampleCandidate != nil {
+                        Button("Add this signature to my enrollment") { model.addSampleFromLastUnlock() }
+                            .help("Signatures drift over time. Adding a strong recent one keeps AirSign recognizing you; the pass mark stays the same.")
+                    }
                     Spacer()
                     Button("Done") { model.cancelToHome() }
                         .buttonStyle(.borderedProminent)

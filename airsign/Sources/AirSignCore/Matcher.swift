@@ -48,6 +48,10 @@ public struct Enrollment: Codable, Equatable {
     public var deviceUID: String?
     public var threshold: Double
     public var gateThresholds: [Gate: Double]
+    /// How many of the last templates were added after strong unlocks (see `adding(_:to:)`); nil for none.
+    public var addedSamples: Int? = nil
+
+    public var addedCount: Int { addedSamples ?? 0 }
 }
 
 public struct GateLight: Equatable {
