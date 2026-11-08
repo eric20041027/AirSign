@@ -230,24 +230,32 @@ Optimistic: B reuses those sittings. S3 is the real test.
 
 ## S3-morning, Mac 1
 
-- **Session:** S3-morning
-- **Time window (ET):** planned 07:30; actual –
-- **Mac:** Mac 1, MacBook Pro
-- **Owner:** Eric
-- **AirPods:** AirPods Pro 3, right bud
-- **Measured sample rate:** –
-- **Enrollment fingerprint:** – (must equal S1's; no re-enrollment)
-- **A4 with the screen hidden:** –
+- **Session:** S3-morning, short version. Planned 07:30; actual 10:16–10:19 ET, after a night's sleep.
+- **Mac:** Mac 1, MacBook Pro; owner Eric; AirPods Pro 3, `right` bud; 50 Hz
+- **Enrollment fingerprint:** `98e6546cb7e2` (the new signature enrolled at 21:45 ET, strength Fair, 1.7 s)
+- **A4 with the screen hidden:** as reported by Eric. Leo watched Eric's 20 owner attempts; about 76 s passed between
+  Eric's last attempt and Leo's first, shorter than the 5-minute practice in the protocol.
 
-| Tester | Scenario | Logged | Accepted | Target | Left |
-|---|---|---|---|---|---|
-| Eric | A1-owner | – | – | 20 | – |
-| Leo | A4-skilled | – | – | 10 | – |
-| Johnny | A4-skilled | – | – | 10 | – |
+| Tester | Scenario | Logged | Accepted | Similarity |
+|---|---|---|---|---|
+| Eric | A1-owner | 20 | **20** (Wilson 95% 84–100%) | median 79, min 76 |
+| Leo | A4-skilled | 10 | **0** (Wilson 95% 0–28%) | 68–74, closest 1.010× the threshold |
 
-**Discarded tally:** –
+**Not run, by decision at 10:13 ET** (less than 2 hours before the deadline): S3 on the old signature `6f1a57e8182d`,
+Johnny's A4, and Mac 2. So the pre-registered tests that needed them (1.35 on the old signature, cross-time
+enrollment) have no S3 data and stay unresolved.
 
-**Anomalies:** none recorded yet.
+**Applying the 1.35 rule to the new signature:** 2 of Leo's 10 attempts (similarity 74 and 73) would have passed at
+1.35, so the factor stays **1.25**.
+
+**What it shows:** the simpler signature held up overnight for the owner (20/20, versus 18/25 and 19/40 for the
+complex one a few hours after enrolling), but a practised imitator came within 1 point of the pass mark (74 vs 75),
+closer than anyone came to the complex signature (72). Simpler is steadier and easier to copy: the trade-off the
+strength meter is there to balance.
+
+**Anomalies:**
+- Leo's 10 attempts were logged with the scenario still on `A1-owner` (tester `Leo`). Relabeled to `A4-skilled`;
+  each file keeps `relabeledFrom` and `relabelNote`, and the originals are backed up on Mac 1.
 
 ## S3-morning, Mac 2
 
