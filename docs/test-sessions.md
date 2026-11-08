@@ -153,20 +153,27 @@ different device.
 ## S2-midnight, Mac 1
 
 - **Session:** S2-midnight
-- **Time window (ET):** planned around 00:00; actual –
+- **Time window (ET):** planned around 00:00; actual 20:41–20:56 (moved up: run as a second sitting, the late-night fatigue angle was dropped)
 - **Mac:** Mac 1, MacBook Pro
 - **Owner:** Eric
-- **AirPods:** AirPods Pro 3, right bud
-- **Measured sample rate:** –
-- **Enrollment fingerprint:** – (must equal S1's; no re-enrollment)
+- **AirPods:** AirPods Pro 3, `right` bud
+- **Measured sample rate:** 50.0 Hz (median of 25 records)
+- **Enrollment fingerprint:** `6f1a57e8182d` (same as S1; no re-enrollment)
 
 | Tester | Scenario | Logged | Accepted | Target | Left |
 |---|---|---|---|---|---|
-| Eric | A1-owner | – | – | 20 | – |
+| Eric | A1-owner | 25 | 18 | 20 (30 planned) | 0 |
 
-**Discarded tally:** –
+Score ÷ threshold: median 0.95 (S1 0.79), max 1.15. Similarity: median 76, min 71 (S1: 80 and 77). Duration median
+4.76 s (S1 5.22 s). All 7 rejections were just over the threshold (similarity 71–74).
 
-**Anomalies:** none recorded yet.
+**Discarded tally:** not reported.
+
+**Anomalies:**
+- **20:47 ET:** entering the lab failed: Eric's identity signatures were rejected at least 5 times in a row (count
+  unconfirmed; the right AirPod was streaming) and AirSign locked signing ("Too many tries"). Entry checks aren't
+  logged. After the lock ran out, Eric entered with the recovery code.
+- 30 attempts were planned to get more samples; 25 were done (protocol minimum 20).
 
 ## S2-midnight, Mac 2
 
