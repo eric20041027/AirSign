@@ -21,7 +21,7 @@ A fingerprint is also a secret you can never change. It's left on every cup and 
 - leaves no trace to lift: the way your wrist turns while you sign isn't left on anything
 - never leaves your Mac
 
-Then we found that AirPods stream motion data to macOS 50 times a second, even when you hold one in your fingers.
+Then we found that AirPods stream motion data to macOS up to 50 times a second (25 on AirPods 4), even when you hold one in your fingers.
 
 Signing in the air isn't a new idea, and neither is the name. Shao, Yang, Wang and Ma's "AirSign: Smartphone Authentication by Signing in the Air" (*Sensors*, 2020) verifies a signature drawn in the air with a smartphone, using the phone's motion sensors plus acoustic echoes. We build on the same idea with three differences:
 
@@ -37,10 +37,10 @@ Signing in the air isn't a new idea, and neither is the name. Shao, Yang, Wang a
 
 Checks on every unlock:
 
-- **Gate 1 (hard):** the same AirPods (by audio device UID) and the same bud as enrollment. AirPods belong to one person, while computers often get shared, so someone who tries with their own AirPods is turned away before any scoring. It's a deterrent check, not a secret: the Bluetooth ID can be read by anyone nearby, so it's never used as an encryption key.
+- **Gate 1 (hard):** the same AirPods (by audio device UID) and the same bud as enrollment. AirPods belong to one person, while computers often get shared, so someone who tries with their own AirPods is turned away whatever their signature scores. It's a deterrent check, not a secret: the Bluetooth ID can be read by anyone nearby, so it's never used as an encryption key.
 - **Score:** one DTW distance over grip angle (gravity direction), size and tempo (acceleration plus duration), and wrist rhythm (gyroscope), compared with your 3 enrolled signatures.
 - **Gate lights:** in demo mode, the screen draws your signature and lights the gate that differed most, so you can see why an attempt failed.
-- **Lockout:** 5 failures in a row lock unlocking for 5 minutes. Wrong recovery codes count too.
+- **Lockout:** 5 failures in a row lock unlocking for 5 minutes, then 15 minutes, 1 hour and 4 hours. Wrong recovery codes count too, and no code is accepted while locked.
 - **Recovery code:** lost your AirPods? The code opens any `.airsign` file on any Mac with AirSign. The code itself is never stored.
 - **Pairing your other Mac:** open a file from your other Mac once with the recovery code and tick **Remember on this Mac**. From then on, your AirPods and signature on this Mac open files locked on the other one. Only a Mac with its own enrolled signature can pair; on a public Mac you just use the code once and nothing is saved. A fresh enrollment forgets all pairings.
 
@@ -52,7 +52,7 @@ Nothing is uploaded. AirSign makes no network connections.
 - **Crypto with CryptoKit:**
   - Each file gets its own random 256-bit key, and its content is encrypted with AES-GCM.
   - The `.airsign` file starts with a readable JSON header: the original name, when it was locked, and the wrapped keys. The header is authenticated together with the ciphertext, so editing it breaks the file.
-  - The file key is wrapped twice. Once with a master key kept in this Mac's login Keychain, which doesn't sync to other devices, released only after a signature passes. Once with HPKE (Curve25519, ChaCha20-Poly1305) to a public key derived from the recovery code, so the code works on any Mac.
+  - The file key is wrapped twice. Once with a master key kept in this Mac's login Keychain, which doesn't sync to other devices. Locking uses it without a signature, like zipping a file; unlocking uses it only after a signature passes. Once with HPKE (Curve25519, ChaCha20-Poly1305) to a public key derived from the recovery code, so the code works on any Mac.
   - Pairing stores the key derived from the recovery code (never the code itself) in the second Mac's Keychain, used only after that Mac's AirPods and signature check passes. A fresh enrollment makes a new master key and clears every pairing.
   - Enrolled signatures are stored encrypted on the Mac.
 - **Matcher:**
@@ -100,10 +100,10 @@ Nothing is uploaded. AirSign makes no network connections.
 | Copies or emails your `.airsign` file | Yes | The master key never leaves your Mac's Keychain |
 | Gets a file from another Mac you paired | Yes | The paired key sits in that Mac's Keychain and is used only after its AirPods and signature check; the recovery code isn't stored. Pair only on your own user account; on public Macs, type the code once |
 | Deletes your settings and re-enrolls to reuse your pairings | Yes | A fresh enrollment makes a new master key and clears every pairing |
-| Tries at your Mac with their own AirPods | Yes, at gate 1 | Turned away before scoring. A deterrent only: the Bluetooth ID is readable nearby, so it's never a key |
-| Uses your logged-in Mac while you're away | Yes | Needs your AirPods, grip and rhythm; 5 failures lock for 5 minutes |
-| Steals your AirPods | Yes | Still needs your grip and rhythm |
-| Watches you sign, then imitates | Partly | For these imitators, 1/14 attempts got through in round 2 (Wilson 95% interval 1.3–31%), even at the strictest setting we tried |
+| Tries at your Mac with their own AirPods | Yes, at gate 1 | Turned away whatever the score. A deterrent only: the Bluetooth ID is readable nearby, so it's never a key |
+| Uses your logged-in Mac while you're away | Partly | Needs your AirPods and a signature close enough to yours; the lockout grows from 5 minutes to 4 hours |
+| Steals your AirPods | Partly | They also need your Mac, and then it's the imitation case below |
+| Watches you sign, then imitates | Partly | In the test lab, for these two imitators, 0/81 attempts after watching or practising got through (0/111 with their own signatures); in the prototype's round 2, 1/14 (Wilson 95% interval 1.3–31%) |
 | Replays recorded motion data | Mostly | Motion comes from the real AirPods via the OS; faking it means running code on your Mac |
 | Knows your Mac password and can read the Keychain | No | The signature gates the key; it isn't the key |
 | Digs the original out of the Trash | No | The plaintext stays there until you empty the Trash |
