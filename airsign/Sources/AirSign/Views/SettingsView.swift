@@ -24,6 +24,9 @@ struct SettingsView: View {
                 Text("Enrolled with the \(enrollment.side.rawValue) AirPod · \(enrollment.templates.count) signatures · threshold \(AppModel.format(enrollment.threshold))")
                     .foregroundStyle(.secondary)
             }
+            if let strength = model.enrolledStrength {
+                StrengthMeter(strength: strength, isEnrolling: false)
+            }
             HStack {
                 Text("Paired Macs: \(model.pairedMacCount)").foregroundStyle(.secondary)
                 Button("Forget paired Macs") { model.forgetPairedMacs() }

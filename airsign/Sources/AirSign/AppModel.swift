@@ -27,6 +27,13 @@ final class AppModel: ObservableObject {
     /// Built from the enrolled signatures; kept only after `MatcherConfig.confirmCount` checks all pass.
     @Published private(set) var pendingEnrollment: Enrollment?
     @Published private(set) var confirmations = 0
+    /// Rating of the signatures just enrolled; a weak one is refused, like a too-simple password.
+    @Published private(set) var enrollStrength: SignatureStrength?
+
+    /// Rating of the signature this Mac has enrolled, for Settings.
+    var enrolledStrength: SignatureStrength? {
+        profile.map { SignatureStrength.of($0.enrollment.templates) }
+    }
     @Published private(set) var isReenrolling = false
     @Published private(set) var recoveryCodeToShow: String?
     @Published private(set) var pendingUnlock: [URL] = []
@@ -245,6 +252,7 @@ final class AppModel: ObservableObject {
             say("Use the same AirPod as your first signature (\(first.side.rawValue)).", .warn)
             return
         }
+        if enrolledSoFar.isEmpty { enrollStrength = nil }
         enrolledSoFar.append(signature)
         enrolledRows.append(rows)
         guard enrolledSoFar.count >= MatcherConfig.enrollCount else {
@@ -259,6 +267,14 @@ final class AppModel: ObservableObject {
             enrolledSoFar.removeLast()
             enrolledRows.removeLast()
             say("Set the sound output to your AirPods (Control Center → Sound), then sign once more.", .bad)
+            return
+        }
+        let strength = SignatureStrength.of(enrolledSoFar)
+        enrollStrength = strength
+        guard strength.level != .weak else {
+            clearEnrollment()
+            let reasons = strength.issues.map { Self.describe($0, strength.metrics) }.joined(separator: "; ")
+            say("This signature is too easy to copy: \(reasons). Enroll again with a longer, bigger signature that changes direction more.", .bad)
             return
         }
         do {
@@ -344,6 +360,7 @@ final class AppModel: ObservableObject {
     func restartEnrollment() {
         stopCapture()
         clearEnrollment()
+        enrollStrength = nil
         livePath = []
         say("Start over: sign 3 times the same way.", .neutral)
     }
@@ -471,6 +488,7 @@ final class AppModel: ObservableObject {
         isReenrolling = false
         returnToLabAfterEnroll = false
         clearEnrollment()
+        enrollStrength = nil
         pendingUnlock = []
         lastVerdict = nil
         livePath = []
@@ -695,6 +713,20 @@ final class AppModel: ObservableObject {
 
     static func format(_ value: Double) -> String {
         String(format: "%.3f", value)
+    }
+
+    static func describe(_ issue: StrengthIssue, _ m: SignatureMetrics) -> String {
+        let c = StrengthConfig.self
+        switch issue {
+        case .tooShort:
+            return String(format: "too short (%.1f s; sign for at least %.1f s)", m.duration, c.minDuration)
+        case .tooLittleMovement:
+            return String(format: "too little movement (%.1f rad of turning; aim for %.0f+)", m.turning, c.minTurning)
+        case .tooFewTurns:
+            return "too few changes of direction (\(m.reversals); aim for \(c.minReversals)+)"
+        case .oneDirection:
+            return "moves mostly one way (use more directions)"
+        }
     }
 
     private static func describe(_ reason: AbortReason) -> String {

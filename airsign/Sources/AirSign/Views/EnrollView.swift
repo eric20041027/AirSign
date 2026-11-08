@@ -11,6 +11,9 @@ struct EnrollView: View {
             Text("Hold one AirPod in your signing hand with a finger over its sensor, and keep the other one in the case. Press Space, sign in the air for about 2 seconds, then hold still. After \(MatcherConfig.enrollCount) signatures, sign \(MatcherConfig.confirmCount) more times so AirSign can check it recognizes you.")
                 .foregroundStyle(.secondary)
             ProgressDots(label: "Enroll", done: model.enrolledSoFar.count, total: MatcherConfig.enrollCount)
+            if let strength = model.enrollStrength {
+                StrengthMeter(strength: strength)
+            }
             if model.pendingEnrollment != nil {
                 ProgressDots(label: "Check", done: model.confirmations, total: MatcherConfig.confirmCount)
             }

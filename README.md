@@ -17,7 +17,7 @@ Think of it as a second lock for personal files: even if someone uses your unloc
 
 ## How it works
 
-1. **Enroll.** Hold one AirPod in your signing hand with a finger over its in-ear sensor, keep the other one in the case, and sign in the air three times (about 2 seconds each), then three more times as a check: if any check doesn't match, the enrollment wasn't steady enough and you start over. AirSign records which AirPods and which bud you used and shows a recovery code once. The preview draws your signature in 3-D; drag it to look from any angle.
+1. **Enroll.** Hold one AirPod in your signing hand with a finger over its in-ear sensor, keep the other one in the case, and sign in the air three times (about 2 seconds each), then three more times as a check: if any check doesn't match, the enrollment wasn't steady enough and you start over. A strength meter, like a password's, rates the signature on length, amount of wrist turning, changes of direction and how many axes it uses; a weak one (under 1.5 s, under 3 rad of turning, fewer than 8 changes of direction, or 85% on one axis) is refused before the checks, because short simple gestures are the easiest to copy. AirSign records which AirPods and which bud you used and shows a recovery code once. The preview draws your signature in 3-D; drag it to look from any angle.
 2. **Lock.** In Finder, right-click a file → **Lock with AirSign**. It becomes `name.ext.airsign`. The original moves to the Trash only after the locked copy has been decrypted in memory and checked byte for byte.
 3. **Unlock.** Right-click the `.airsign` file → **Unlock with AirSign**, press Space, sign, hold still.
 
@@ -56,7 +56,7 @@ Requirements: macOS 14 or later; AirPods Pro, AirPods (3rd or 4th generation) or
 ```bash
 git clone https://github.com/eric20041027/AirSign.git
 cd AirSign/airsign
-swift test                # 38 tests
+swift test                # 46 tests
 scripts/install.sh        # builds, signs, installs to ~/Applications, registers the Finder items
 ```
 

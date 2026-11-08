@@ -61,7 +61,7 @@ public enum StrengthLevel: Int, Comparable {
     public static func < (a: StrengthLevel, b: StrengthLevel) -> Bool { a.rawValue < b.rawValue }
 }
 
-public enum StrengthIssue: Equatable {
+public enum StrengthIssue: Hashable {
     case tooShort, tooLittleMovement, tooFewTurns, oneDirection
 }
 
