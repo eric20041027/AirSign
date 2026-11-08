@@ -47,6 +47,7 @@ Think of it as a second lock for the files that matter: if someone sits down at 
 | 💪 **Signature strength meter** | Like a password meter: a signature that is too short, has too little movement, too few changes of direction, or goes mostly one way is refused at enrollment. |
 | 📊 **Similarity score** | 100% means identical to your enrollment, 75% is the pass mark. A closeness score, not a probability. |
 | 🌀 **3-D signature preview** | Drag to turn your signature and see it from any angle. |
+| 🔄 **Follows your drift** | After an unlock at 80% similarity or more, you can add that signature to your enrollment (up to 2 extra, the originals always kept). The pass mark never moves. |
 | 🛟 **Recovery code** | A 32-character code opens your files on any Mac if you lose your AirPods. |
 | 🚫 **Escalating lockout** | 5 wrong tries lock signing for 5 minutes, then 15 minutes, 1 hour, 4 hours. |
 | 🏠 **Stays on your Mac** | No accounts, no cloud, no network code at all. |
@@ -136,14 +137,14 @@ If the Finder items don't appear, enable them in System Settings → Keyboard �
 
 ## Under the hood
 
-- **Swift + SwiftUI** app with Finder Services menu items; core logic in a tested `AirSignCore` library (56 unit tests).
+- **Swift + SwiftUI** app with Finder Services menu items; core logic in a tested `AirSignCore` library (62 unit tests).
 - **CoreMotion** `CMHeadphoneMotionManager` streams the AirPod's attitude, rotation rate, acceleration and gravity (we measured 50 Hz on AirPods Pro 3 and 25 Hz on AirPods 4).
 - **Matcher:** 9 features per sample, banded DTW (25% band), a duration penalty, the minimum distance to the enrolled templates.
 - **CryptoKit** for AES-GCM and HPKE; the **Keychain** for the master key and a copy of the lockout counter.
 
 ## Roadmap
 
-- Follow natural drift: enroll across days, or add verified high-similarity signatures to the templates.
+- Follow natural drift further: enroll across days, and measure how much the added signatures help over weeks.
 - Derive the key from the signature itself (a fuzzy extractor), or release it from the Secure Enclave, so there is no readable stored key.
 - A larger evaluation: more owners and imitators, sessions days apart, a public dataset.
 - An iPhone relay, so Windows and Linux laptops can use AirPods too.
