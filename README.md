@@ -41,7 +41,7 @@ Think of it as a second lock for the files that matter: if someone sits down at 
 | | |
 |---|---|
 | ✍️ **Sign in the air** | Hold one AirPod with a finger over its in-ear sensor and sign. Its gyroscope and accelerometer record how you move, not just the shape. |
-| 🗂️ **Right-click in Finder** | **Lock with AirSign** turns `report.pdf` into `report.pdf.airsign`; **Unlock with AirSign** brings it back. |
+| 🗂️ **Right-click in Finder** | **Lock with AirSign** turns `report.pdf` into `report.pdf.airsign`, or a whole folder into `Folder.airsign` (up to 500 MB); **Unlock with AirSign** brings it back. |
 | 🔐 **Real encryption** | Every file gets its own AES-GCM key. Without the key the content is ciphertext, not just hidden. |
 | 🎧 **One gate, one score** | Your AirPods and bud must match; then one score combines your grip, your size and tempo, and the wrist rhythm nobody can see from across the room. |
 | 💪 **Signature strength meter** | Like a password meter: a signature that is too short, has too little movement, too few changes of direction, or goes mostly one way is refused at enrollment. |
@@ -65,7 +65,7 @@ flowchart LR
 ```
 
 1. **Enroll.** Sign three times. AirSign rates the signature's strength, then asks for three more signatures as a check: if any of them fails, the enrollment wasn't steady enough and you start over. It records which AirPods and which bud you used and shows a recovery code once.
-2. **Lock.** Right-click any file → **Lock with AirSign**. The original goes to the Trash only after the locked copy has been read back, decrypted and matched to the original by SHA-256.
+2. **Lock.** Right-click any file or folder → **Lock with AirSign**. A folder is packed into one archive first, so its file names and structure are hidden too. The original goes to the Trash only after the locked copy has been read back, decrypted and matched to the original by SHA-256.
 3. **Unlock.** Right-click the `.airsign` file → **Unlock with AirSign**, press Space, sign, hold still.
 
 **What is checked**
@@ -136,7 +136,7 @@ If the Finder items don't appear, enable them in System Settings → Keyboard �
 
 ## Under the hood
 
-- **Swift + SwiftUI** app with Finder Services menu items; core logic in a tested `AirSignCore` library (52 unit tests).
+- **Swift + SwiftUI** app with Finder Services menu items; core logic in a tested `AirSignCore` library (56 unit tests).
 - **CoreMotion** `CMHeadphoneMotionManager` streams the AirPod's attitude, rotation rate, acceleration and gravity (we measured 50 Hz on AirPods Pro 3 and 25 Hz on AirPods 4).
 - **Matcher:** 9 features per sample, banded DTW (25% band), a duration penalty, the minimum distance to the enrolled templates.
 - **CryptoKit** for AES-GCM and HPKE; the **Keychain** for the master key and a copy of the lockout counter.
