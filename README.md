@@ -15,6 +15,7 @@
   <img alt="Swift" src="https://img.shields.io/badge/Swift-SwiftUI-1a5cff?logo=swift&logoColor=white">
   <img alt="No network code" src="https://img.shields.io/badge/network-none-111214">
   <img alt="MakeUC 2026" src="https://img.shields.io/badge/MakeUC%202026-Security%20track-1a5cff">
+  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-111214">
 </p>
 
 <p align="center">
@@ -179,3 +180,9 @@ If the Finder items don't appear, enable them in System Settings â†’ Keyboard â†
 ## Team
 
 Three students at MakeUC 2026: core and integration, Finder integration and second-Mac testing, tuning, write-up and video. We wrote a design and a task-by-task plan first, then built the core test-first, with Claude Code and Antigravity as coding assistants. Logo and font credits: [CREDITS.md](CREDITS.md).
+
+The name is shared with earlier, unrelated work: Shao, Yang, Wang and Ma's "AirSign: Smartphone Authentication by Signing in the Air" (*Sensors* 21(1):104, 2020, doi:10.3390/s21010104) verifies signatures drawn in the air with a smartphone.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Brand files are included; see [CREDITS.md](CREDITS.md) for the fonts.
