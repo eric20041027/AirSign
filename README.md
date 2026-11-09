@@ -79,7 +79,7 @@ flowchart LR
 | Size and tempo | Acceleration, and how long the signature takes | Together, as one score |
 | Wrist rhythm | Rotation rate from the gyroscope | Together, as one score |
 
-The score is a banded dynamic-time-warping distance to your three enrolled signatures. The pass mark adapts to you: 1.25 × the largest difference between your own enrolled signatures. In demo mode the app lights up which part differed most.
+The score is a banded dynamic-time-warping distance to your three enrolled signatures. The pass mark adapts to you: 1.25 × the largest difference between your own enrolled signatures. In demo mode the app shows, for each part, how far it was from your enrollment.
 
 ## What we measured
 
