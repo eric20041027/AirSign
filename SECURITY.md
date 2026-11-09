@@ -19,15 +19,16 @@ AirSign is maintained by students in their spare time. We aim to reply within 7 
 - The `.airsign` file format and its cryptography (AES-GCM, HPKE, key wrapping)
 - Handling of the master key, the recovery code and paired-Mac keys, and the Keychain items AirSign creates
 - The lockout: getting more attempts than it allows
-- Accepting a signature or AirPods that should be rejected, beyond the rates reported in the README
+- Accepting a signature or AirPods that should be rejected, beyond the limits documented in the README
 - Plaintext or keys left on disk beyond what the README documents
 
 ## Known limitations
 
 These are documented design limits, not vulnerabilities (see the README's [Security model](README.md#security-model)):
 
-- Someone using your unlocked Mac, or with your stolen AirPods, is only partly stopped: they still have to match your signature, and the lockout grows to 4 hours.
-- A skilled imitator who watched you sign is only partly stopped: 0/81 such attempts got in during our tests, a small sample.
+- Someone using your unlocked Mac is only partly stopped: they still have to match your signature, and the lockout grows to 4 hours. Someone with your stolen AirPods also needs your Mac, and then the same applies.
+- An imitator who watched you sign is only partly stopped: in our tests, two imitators who watched once or practised with a video got in 0 of 81 times, a small sample.
 - Someone who knows your Mac login password and can read the Keychain can skip the signature: it guards the key, it isn't the key.
+- The AirPods check is a deterrent, not a secret: the AirPods' ID can be read nearby, so someone who spoofs it is let through to the signature check, which they still have to pass.
 - Anyone with your recovery code and the file can open it: the code is a master key, keep it offline.
 - Locking moves the original to the Trash; it stays there in plaintext until you empty the Trash.

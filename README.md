@@ -142,15 +142,22 @@ If the Finder items don't appear, enable them in System Settings â†’ Keyboard â†
 
 ## Uninstall
 
-Deleting AirSign's Keychain items removes the master key, so existing `.airsign` files will then open only with your recovery code. Unlock anything you want to keep first.
+Deleting AirSign's Keychain items removes the master key, so existing `.airsign` files will then open only with your recovery code. Unlock anything you want to keep first. Then quit AirSign and run these from the root of your clone:
 
 ```bash
-rm -rf ~/Applications/AirSign.app "$HOME/Library/Application Support/AirSign"
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+"$LSREGISTER" -u ~/Applications/AirSign.app
+"$LSREGISTER" -u airsign/build/AirSign.app
+rm -rf ~/Applications/AirSign.app airsign/build "$HOME/Library/Application Support/AirSign"
+defaults delete com.makeuc.airsign
 for account in profile-key master-key paired-recovery-keys lockout selftest; do
-  security delete-generic-password -s com.makeuc.airsign -a "$account" >/dev/null 2>&1
+  security delete-generic-password -s com.makeuc.airsign -a "$account" >/dev/null
 done
 /System/Library/CoreServices/pbs -update   # refreshes the Finder right-click items
+security find-generic-password -s com.makeuc.airsign   # should report that the item could not be found
 ```
+
+Errors saying an item or domain doesn't exist are fine: not every install creates all of them.
 
 ## Security model
 

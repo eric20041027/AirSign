@@ -2,7 +2,7 @@
 
 Consolidated record of the test-lab sessions in [test-protocol.md](test-protocol.md) (protocol v2), one section
 per session per Mac. Counts come from `tools/testlog_summary.py` on each Mac. Discarded tallies are kept by hand
-because the app doesn't log them. Tester C (role C) keeps this file.
+because the app doesn't log them. Tester C keeps this file.
 
 > **Disclosure:** Tester C is both an imitator in these tests and the analyst who writes
 > [evaluation.md](evaluation.md) and [algorithm-comparison.md](algorithm-comparison.md). To limit the
