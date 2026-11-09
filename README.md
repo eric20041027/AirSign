@@ -125,6 +125,14 @@ scripts/install.sh       # builds, signs, installs to ~/Applications, registers 
 
 If the Finder items don't appear, enable them in System Settings → Keyboard → Keyboard Shortcuts → Services → Files and Folders.
 
+## Quick start
+
+1. **Enroll.** Open AirSign, hold one AirPod as described below, press Space, sign in the air for about 2 seconds, then hold still. Sign 3 times, then 3 more times as a check. Write down the recovery code before you click *I wrote it down*: it is shown only once.
+2. **Lock.** Right-click any file or folder in Finder → **Lock with AirSign**.
+3. **Unlock.** Right-click the `.airsign` file → **Unlock with AirSign**, press Space, sign, then hold still.
+
+**How to hold the AirPod:** keep the other AirPod in its case. Hold this one between your thumb and fingers, with a fingertip covering the **black sensor on the inner side**, where it would touch your ear. AirPods stop sending motion when that sensor is uncovered. If AirSign shows *Hold an AirPod with a finger over its sensor*, move your fingertip onto it.
+
 ## Security model
 
 | Attacker | Stopped? | Why |
