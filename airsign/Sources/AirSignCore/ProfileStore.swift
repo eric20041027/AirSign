@@ -23,6 +23,7 @@ public struct ProfileStore {
     static let profileKeyName = "profile-key"
     static let masterKeyName = "master-key"
     static let pairedKeysName = "paired-recovery-keys"
+    static let lockoutName = "lockout"
 
     private let directory: URL
     private let secrets: SecretStore
@@ -43,12 +44,19 @@ public struct ProfileStore {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let box = try AES.GCM.SealedBox(combined: Data(contentsOf: url))
         let plaintext = try AES.GCM.open(box, using: key(Self.profileKeyName))
-        return try JSONDecoder().decode(Profile.self, from: plaintext)
+        var profile = try JSONDecoder().decode(Profile.self, from: plaintext)
+        // The Keychain keeps its own copy of the count, so restoring an old profile.bin can't reset it.
+        if let data = try secrets.load(Self.lockoutName) {
+            let kept = try JSONDecoder().decode(Lockout.self, from: data)
+            profile.lockout = Lockout.mostRestrictive(profile.lockout, kept)
+        }
+        return profile
     }
 
     public func save(_ profile: Profile) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
+        try secrets.save(JSONEncoder().encode(profile.lockout), as: Self.lockoutName)
         let plaintext = try JSONEncoder().encode(profile)
         guard let sealed = try AES.GCM.seal(plaintext, using: key(Self.profileKeyName)).combined else {
             throw CocoaError(.fileWriteUnknown)

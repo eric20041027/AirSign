@@ -22,7 +22,8 @@
   <a href="#what-we-measured">What we measured</a> ·
   <a href="#install">Install</a> ·
   <a href="#security-model">Security model</a> ·
-  <a href="#roadmap">Roadmap</a>
+  <a href="#roadmap">Roadmap</a> ·
+  <a href="docs/technical-guide-zh.md">中文技術文件</a>
 </p>
 
 ---
@@ -99,13 +100,16 @@ We built a logged test lab into the app and ran it on two Macs during the event:
 **What surprised us: signatures drift.** Same owner, same enrollment, same Mac, about 2 and 2.5 hours later: 18/25, then 19/40 (42 logged; two rejected false starts of 0.8 s and 1.9 s left out). A long, complex signature (5.4 s, 117 changes of direction) slowly moved away from its enrollment: 5 of those 40 later tries scored worse than the closest imitator, so no threshold alone can fix it.
 
 - The strength meter and the three-signature check fix other problems we found (very short signatures, and an unsteady first enrollment on Mac 2). They don't fix drift: the drifting signature rated Strong and passed 20/20 right after enrolling.
-- A threshold factor of 1.35, chosen after the second sitting and fixed before the later ones, would have let the owner in 34/40 times instead of 19/40 and still rejects all 111 imitator attempts, narrowly (at 1.40 one passes). It is adopted only if the final session's imitators all fail.
-- Adding a verified signature from each later sitting to the enrollment kept more owner tries in an offline replay (36/39 instead of 28/39). That is optimistic, since it reuses those sittings; the final session tests it properly.
+- A threshold factor of 1.35, chosen after the second sitting and fixed before the later ones, would have let the owner in 34/40 times instead of 19/40 and still rejected all 111 first-session imitator attempts, narrowly. In the final session it would have let 2 of 50 imitations of the new signature through (both Leo's), so the app keeps 1.25.
+- Adding a verified signature from each later sitting to the enrollment kept more owner tries in an offline replay (36/39 instead of 28/39). That is optimistic, since it reuses those sittings; the app now offers it after strong unlocks.
+
+**After a night's sleep** the owner switched to a simpler signature (1.7 s, strength Fair): 20/20 the next morning (similarity 76–81%), and two imitators who watched it got in 0/50: Leo 0/10, coming as close as 74% against the 75% pass mark, and Johnny 0/40, never above 62%. Simpler signatures are steadier and easier to copy; the strength meter is there to keep that balance.
 
 **Caveats we want you to know**
 
 - Mac 2's first logged enrollment was unsteady (owner 12/20) and was deleted, with 21 earlier unlogged attempts, before any imitator tried. Its owner's signature (1.2 s) would now fail the strength meter.
 - At the start of the second sitting the owner was locked out after at least 5 rejected sign-ins to open the test lab; those aren't logged.
+- The final session was cut short to make the deadline: only the new signature, two imitators, on Mac 1.
 - One teammate is both an imitator and the analyst. To limit that, the matcher and its 1.25 factor were frozen before any test data existed.
 
 ## Install
@@ -120,6 +124,18 @@ scripts/install.sh       # builds, signs, installs to ~/Applications, registers 
 ```
 
 If the Finder items don't appear, enable them in System Settings → Keyboard → Keyboard Shortcuts → Services → Files and Folders.
+
+## Quick start
+
+1. **Enroll.** Open AirSign, hold one AirPod as described below, press Space, sign in the air for about 2 seconds, then hold still. Sign 3 times, then 3 more times as a check. Write down the recovery code before you click *I wrote it down*: it is shown only once.
+2. **Lock.** Right-click any file or folder in Finder → **Lock with AirSign**.
+3. **Unlock.** Right-click the `.airsign` file → **Unlock with AirSign**, press Space, sign, then hold still.
+
+**How to hold the AirPod:** keep the other AirPod in its case. Hold this one like a pen, with the bottom of the stem as the pen tip, and keep a fingertip on the **black sensor on the inner side**, where it would touch your ear. AirPods stop sending motion when that sensor is uncovered. If AirSign shows *Hold an AirPod with a finger over its sensor*, move your fingertip onto it.
+
+<p align="center">
+  <img alt="Left: the black sensor on an AirPod Pro, circled. Right: an AirPod held like a pen, with the bottom of the stem as the pen tip." src="docs/images/hold-airpod.jpg" width="720">
+</p>
 
 ## Security model
 

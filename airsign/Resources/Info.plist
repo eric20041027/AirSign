@@ -10,6 +10,8 @@
 	<string>AirSign</string>
 	<key>CFBundleExecutable</key>
 	<string>AirSign</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

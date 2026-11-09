@@ -27,7 +27,7 @@ struct HomeView: View {
     private func pick(lockedFiles: Bool) {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false
+        panel.canChooseDirectories = !lockedFiles
         if lockedFiles, let type = UTType(filenameExtension: FileLocker.lockedExtension) {
             panel.allowedContentTypes = [type]
         }

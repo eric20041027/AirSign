@@ -12,10 +12,40 @@ struct SignaturePad: View {
     var latestColor: Color
     var isCapturing: Bool
 
+    /// Drag to turn the 3-D path; double-click to go back to the front view.
+    @State private var yaw = 0.0
+    @State private var pitch = 0.0
+    @State private var dragStart: SIMD2<Double>?
+
+    private var hasShapes: Bool { !templates.isEmpty || path.count > 1 }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Canvas { context, size in draw(in: &context, size: size) }
                 .frame(minHeight: 240)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 2)
+                        .onChanged { value in
+                            let start = dragStart ?? SIMD2(yaw, pitch)
+                            dragStart = start
+                            yaw = start.x + value.translation.width * 0.01
+                            pitch = min(1.4, max(-1.4, start.y + value.translation.height * 0.01))
+                        }
+                        .onEnded { _ in dragStart = nil }
+                )
+                .onTapGesture(count: 2) {
+                    yaw = 0
+                    pitch = 0
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if hasShapes {
+                        Text("Drag to turn · double-click to reset")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(8)
+                    }
+                }
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .textBackgroundColor)))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
@@ -36,8 +66,9 @@ struct SignaturePad: View {
 
     private func draw(in context: inout GraphicsContext, size: CGSize) {
         let projection = Projection(reference: templates.first?.path ?? path)
-        var shapes = templates.map { (points: projection.points($0.path), color: Color.secondary.opacity(0.45)) }
-        if path.count > 1 { shapes.append((projection.points(path), isCapturing ? Color.accentColor : latestColor)) }
+        let view = { (p: [SIMD3<Double>]) in projection.points(p, yaw: yaw, pitch: pitch) }
+        var shapes = templates.map { (points: view($0.path), color: Color.secondary.opacity(0.45)) }
+        if path.count > 1 { shapes.append((view(path), isCapturing ? Color.accentColor : latestColor)) }
         guard !shapes.isEmpty else {
             context.draw(Text("Your signature appears here").foregroundStyle(.secondary),
                          at: CGPoint(x: size.width / 2, y: size.height / 2))
@@ -83,21 +114,34 @@ private struct Light: View {
     }
 }
 
-/// Projects 3-D gyro paths onto the reference path's two main directions, each path centred on itself.
+/// Shows 3-D gyro paths in the reference path's own frame (its two main directions face the viewer),
+/// turned by the user's drag, each path centred on itself.
 private struct Projection {
     let first: SIMD3<Double>
     let second: SIMD3<Double>
+    let third: SIMD3<Double>
 
     init(reference: [SIMD3<Double>]) {
         (first, second) = Self.principalAxes(reference)
+        let c = SIMD3(first.y * second.z - first.z * second.y,
+                      first.z * second.x - first.x * second.z,
+                      first.x * second.y - first.y * second.x)
+        let length = (c * c).sum().squareRoot()
+        third = length > 1e-12 ? c / length : SIMD3(0, 0, 1)
     }
 
-    func points(_ path: [SIMD3<Double>]) -> [CGPoint] {
+    /// Orthographic view after turning `yaw` around the vertical axis, then `pitch` around the horizontal one.
+    func points(_ path: [SIMD3<Double>], yaw: Double, pitch: Double) -> [CGPoint] {
         guard !path.isEmpty else { return [] }
         let mean = path.reduce(SIMD3<Double>.zero, +) / Double(path.count)
+        let (cy, sy, cp, sp) = (cos(yaw), sin(yaw), cos(pitch), sin(pitch))
         return path.map { p in
             let d = p - mean
-            return CGPoint(x: (d * first).sum(), y: -(d * second).sum())
+            let x = (d * first).sum(), y = (d * second).sum(), z = (d * third).sum()
+            let turnedX = x * cy + z * sy
+            let turnedZ = -x * sy + z * cy
+            let tiltedY = y * cp - turnedZ * sp
+            return CGPoint(x: turnedX, y: -tiltedY)
         }
     }
 

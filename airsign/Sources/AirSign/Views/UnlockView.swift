@@ -28,11 +28,24 @@ struct UnlockView: View {
                 isCapturing: model.isCapturing
             )
             HStack {
-                CaptureButton()
-                    .disabled(model.profile == nil || model.lockoutRemaining != nil)
-                Button("Use recovery code…") { showRecovery = true }
-                Spacer()
-                Button("Cancel") { model.cancelToHome() }
+                if model.unlockFinished {
+                    if model.sampleCandidate != nil {
+                        Button("Add this signature to my enrollment") { model.addSampleFromLastUnlock() }
+                            .help("Signatures drift over time. Adding a strong recent one keeps AirSign recognizing you; the pass mark stays the same.")
+                    }
+                    Spacer()
+                    Button("Done") { model.cancelToHome() }
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                } else {
+                    if !model.identityNeedsCode {
+                        CaptureButton()
+                            .disabled(model.profile == nil || model.lockoutRemaining != nil)
+                    }
+                    Button("Use recovery code…") { showRecovery = true }
+                    Spacer()
+                    Button("Cancel") { model.cancelToHome() }
+                }
             }
         }
         // A sheet keeps the Space shortcut away from the code field.

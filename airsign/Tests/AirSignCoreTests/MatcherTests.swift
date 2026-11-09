@@ -56,6 +56,23 @@ import Testing
     #expect(tightened.threshold == e.threshold / 2)
 }
 
+@Test func meanPairRuleUsesTheAveragePairwiseDistance() throws {
+    let sigs = (0..<5).map { _ in Signature(samples: strokes(ownerShape, noise: 0.25)) }
+    let e = try enroll(sigs, deviceUID: "UID-A", rule: .meanPair)
+    var pairs: [Double] = []
+    for i in 0..<5 { for j in (i + 1)..<5 { pairs.append(distance(sigs[i], sigs[j])) } }
+    #expect(e.templates.count == 5)
+    #expect(abs(e.threshold - MatcherConfig.thresholdFactor * pairs.reduce(0, +) / Double(pairs.count)) < 1e-12)
+}
+
+@Test func worstPairRuleStaysTheDefault() throws {
+    let sigs = (0..<3).map { _ in Signature(samples: strokes(ownerShape, noise: 0.25)) }
+    let byDefault = try enroll(sigs, deviceUID: "UID-A")
+    let explicit = try enroll(sigs, deviceUID: "UID-A", rule: .worstPair)
+    #expect(byDefault.threshold == explicit.threshold)
+    #expect(MatcherConfig.thresholdRule == .worstPair && MatcherConfig.enrollCount == 3)
+}
+
 @Test func lightsStayFiniteWhenEnrolledGateIsIdentical() throws {
     let e = try enroll((0..<3).map { _ in Signature(samples: strokes(ownerShape)) }, deviceUID: nil)
     let v = verify(Signature(samples: strokes(ownerShape)), deviceUID: nil, against: e)
