@@ -131,7 +131,11 @@ If the Finder items don't appear, enable them in System Settings → Keyboard �
 2. **Lock.** Right-click any file or folder in Finder → **Lock with AirSign**.
 3. **Unlock.** Right-click the `.airsign` file → **Unlock with AirSign**, press Space, sign, then hold still.
 
-**How to hold the AirPod:** keep the other AirPod in its case. Hold this one between your thumb and fingers, with a fingertip covering the **black sensor on the inner side**, where it would touch your ear. AirPods stop sending motion when that sensor is uncovered. If AirSign shows *Hold an AirPod with a finger over its sensor*, move your fingertip onto it.
+**How to hold the AirPod:** keep the other AirPod in its case. Hold this one like a pen, with the bottom of the stem as the pen tip, and keep a fingertip on the **black sensor on the inner side**, where it would touch your ear. AirPods stop sending motion when that sensor is uncovered. If AirSign shows *Hold an AirPod with a finger over its sensor*, move your fingertip onto it.
+
+<p align="center">
+  <img alt="Left: the black sensor on an AirPod Pro, circled. Right: an AirPod held like a pen, with the bottom of the stem as the pen tip." src="docs/images/hold-airpod.jpg" width="720">
+</p>
 
 ## Security model
 
