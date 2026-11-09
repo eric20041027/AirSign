@@ -124,6 +124,8 @@ swift test               # the core: matcher, crypto, file locking, lockout
 scripts/install.sh       # builds, signs, installs to ~/Applications, registers the Finder items
 ```
 
+No Apple Development certificate? Run `AIRSIGN_ADHOC=1 scripts/install.sh` instead; macOS may then ask for your password after each rebuild.
+
 If the Finder items don't appear, enable them in System Settings → Keyboard → Keyboard Shortcuts → Services → Files and Folders.
 
 ## Quick start
@@ -137,6 +139,18 @@ If the Finder items don't appear, enable them in System Settings → Keyboard �
 <p align="center">
   <img alt="Left: the black sensor on an AirPod Pro, circled. Right: an AirPod held like a pen, with the bottom of the stem as the pen tip." src="docs/images/hold-airpod.jpg" width="720">
 </p>
+
+## Uninstall
+
+Deleting AirSign's Keychain items removes the master key, so existing `.airsign` files will then open only with your recovery code. Unlock anything you want to keep first.
+
+```bash
+rm -rf ~/Applications/AirSign.app "$HOME/Library/Application Support/AirSign"
+for account in profile-key master-key paired-recovery-keys lockout selftest; do
+  security delete-generic-password -s com.makeuc.airsign -a "$account" >/dev/null 2>&1
+done
+/System/Library/CoreServices/pbs -update   # refreshes the Finder right-click items
+```
 
 ## Security model
 
@@ -176,6 +190,10 @@ If the Finder items don't appear, enable them in System Settings → Keyboard �
 | [`archive/makeuc-2026/`](archive/makeuc-2026/) | Hackathon records: test protocol and sessions, tuning, Devpost text, demo script, team plan (some in Chinese) |
 | [`tools/`](tools/) | Python ports of the matcher for tuning and the algorithm comparison |
 | [`spikes/airpods-motion/`](spikes/airpods-motion/) | The first prototype that proved the AirPods signal |
+
+## Contributing
+
+Bug reports, fixes and tests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Report security problems privately as described in [SECURITY.md](SECURITY.md), and follow the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Team
 

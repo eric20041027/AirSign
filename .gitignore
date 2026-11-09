@@ -23,3 +23,11 @@ spikes/airpods-motion/*.csv
 
 # Local-only secrets (demo recovery code, never pushed)
 .local/
+
+# Local working folders and tool caches
+reports/
+research_notes/
+.swiftpm/
+xcuserdata/
+__pycache__/
+.venv/
