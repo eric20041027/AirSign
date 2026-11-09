@@ -10,7 +10,7 @@
 
 | 角色 | 人和設備 | 負責什麼 | 負責的檔案（其他人不要改） |
 |---|---|---|---|
-| **A 核心** | Eric + Claude Code，MacBook Pro，AirPods Pro 3 | 計畫的 Task 1–9：比對、加密、上鎖解鎖、讀 AirPods、註冊和解鎖流程（16:00 起 A 接手 Task 7 和簽名畫面元件） | `airsign/` 底下除了 B 那兩個檔案以外的全部 |
+| **A 核心** | 隊友 A + Claude Code，MacBook Pro，AirPods Pro 3 | 計畫的 Task 1–9：比對、加密、上鎖解鎖、讀 AirPods、註冊和解鎖流程（16:00 起 A 接手 Task 7 和簽名畫面元件） | `airsign/` 底下除了 B 那兩個檔案以外的全部 |
 | **B Finder 與第二台 Mac** | 隊友 B + Antigravity，MacBook Air M1，AirPods 4 | Task 10（右鍵選單、安裝腳本）、第二台 Mac 的驗證、收集公平的模仿資料 | `airsign/Sources/AirSign/ServicesProvider.swift`、`airsign/scripts/install.sh` |
 | **C 調校與交件** | 隊友 C + Claude Max，Windows 11 | 用 Python 調比對參數、Devpost 文案、簡報、demo 腳本、剪影片、填評審報名表 | `docs/tuning.md`、`docs/devpost.md`、`docs/demo-script.md`、`tools/tuning/` |
 
@@ -22,7 +22,7 @@
 
 | 時間 | A 核心 | B 硬體與 Finder | C 調校與交件 |
 |---|---|---|---|
-| 現在 – 16:30 | 推上專案骨架（Task 1） | 確認 `sw_vers` ≥ 14；在 Xcode 建立 Apple Development 憑證；用原型收集公平的模仿資料 | 寫 Python 版的比對，等 Eric 私下傳資料 |
+| 現在 – 16:30 | 推上專案骨架（Task 1） | 確認 `sw_vers` ≥ 14；在 Xcode 建立 Apple Development 憑證；用原型收集公平的模仿資料 | 寫 Python 版的比對，等 A 私下傳資料 |
 | 16:30 – 19:00 | Task 2–6（核心邏輯和測試） | Task 7，接著做 `SignaturePad` | 調參報告寫進 `docs/tuning.md` |
 | 18:00 – 19:00 | 晚餐 | 晚餐 | 晚餐 |
 | 19:00 – 23:00 | Task 8–9（註冊、解鎖、救援碼） | Task 10（右鍵選單、安裝） | Devpost 和簡報草稿 |
@@ -82,10 +82,10 @@ docs/tuning.md. Do not commit the data files.
 
 ## 開始之前（各做一次）
 
-- **Eric**：
+- **A**：
   - 到 GitHub 的 Settings → Collaborators → Add people 加入 B 和 C，他們要到信箱接受邀請
   - 把 `spikes/airpods-motion/sessions/` 壓縮，**私下**傳給 C（例如 Discord 私訊），不要放進 repo
 - **B**：
   - 到 Xcode → Settings → Accounts → 自己的 Apple ID → Manage Certificates → + → Apple Development
   - `git clone https://github.com/eric20041027/AirSign.git`
-- **C**：`git clone` 這個 repo，把 Eric 傳來的資料放在 repo 外面的資料夾
+- **C**：`git clone` 這個 repo，把 A 傳來的資料放在 repo 外面的資料夾

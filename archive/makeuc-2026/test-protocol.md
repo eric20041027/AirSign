@@ -31,7 +31,7 @@ App 顯示給人看的「相似度」，公式固定，不從資料調整任何�
 - **S2 發現本人簽名會漂移**：Mac 1 只隔約 1.5 小時，本人從 S1 的 20/20 掉到 S2 的 18/25（同一個註冊、同一耳、50 Hz）。被拒的 7 次分數 ÷ 門檻都在 1.00–1.15（相似度 71–74），簽名長度中位數從 5.2 秒變成 4.8 秒。
 - **候選倍數 1.35**（目前是 1.25）：
 
-  | 倍數 | S1 本人（兩台） | S2 Eric | S1 模仿者 |
+  | 倍數 | S1 本人（兩台） | S2 A | S1 模仿者 |
   |---|---|---|---|
   | 1.25 | 40/41 | 18/25 | 0/111 |
   | 1.35 | 40/41 | 23/25 | 0/111 |
@@ -48,7 +48,7 @@ App 顯示給人看的「相似度」，公式固定，不從資料調整任何�
 
 **目的**：S2 顯示本人簽名會隨時間漂移。這個測試要看「註冊樣本來自不同時間」是否比放寬倍數更能留住本人。這是補充分析，**不改變** 09:30 的倍數決定規則，比賽期間 App 也不改成 5 筆註冊；結果只用在報告和路線圖。
 
-- **範圍**：Mac 1（Eric）。Mac 2 如果 Leo 也有 S2 和 S4-extra 的 A1，就照同樣方式做。
+- **範圍**：Mac 1（A）。Mac 2 如果 B 也有 S2 和 S4-extra 的 A1，就照同樣方式做。
 - **兩組註冊樣本**（每筆記錄都有完整動作資料，可以直接當樣本）：
   - **A（現狀）**：S1 的 3 筆註冊記錄（`mode: "enroll"`，指紋 `6f1a57e8182d`）。
   - **B（跨時間）**：A 的 3 筆，加上 S2 **第一筆通過**的 A1，再加上 `S4-extra` **第一筆通過**的 A1，共 5 筆。只取通過的，因為產品只會加入驗證過的簽名；取第一筆是為了避免挑選。這 2 筆之後不再當測試資料。
@@ -79,8 +79,8 @@ App 顯示給人看的「相似度」，公式固定，不從資料調整任何�
 
 | Mac | 本人 | AirPods | 模仿者 |
 |---|---|---|---|
-| Mac 1 MacBook Pro | Eric | AirPods Pro 3，右耳 | B、C |
-| Mac 2 MacBook Air | B | AirPods 4，用 B 的慣用手那一側 | Eric、C |
+| Mac 1 MacBook Pro | A | AirPods Pro 3，右耳 | B、C |
+| Mac 2 MacBook Air | B | AirPods 4，用 B 的慣用手那一側 | A、C |
 
 如果能找現場其他參賽者當模仿者更好：模仿者越多，證據越有說服力。
 
@@ -120,14 +120,14 @@ S1、S2、S3 的 A1 結果放在一起比較，就能知道**睡醒後本人的�
 
 | # | 測試 | 怎麼做 | 預期結果 | 實際結果 | 誰／何時 |
 |---|---|---|---|---|---|
-| B1 | 換一台電腦開檔 | 把 Mac 1 上鎖的 `.airsign` 用 AirDrop 傳到 Mac 2，用 B 的簽名解鎖 | 打不開，顯示「locked on another Mac」 | 通過：簽名通過（score 0.439 vs 0.700），但因本機無對應金鑰而拒絕解鎖，顯示 `locked on another Mac. Use that Mac's recovery code.` | Leo (Mac 2) / 11-07 16:43 ET |
-| B2 | 救援碼 | 接著在 Mac 2 用 Eric 的救援碼解鎖 | 打得開，內容一樣 | | |
-| B3 | 竄改檔案 | `printf '\x00' \| dd of=測試檔.airsign bs=1 seek=400 conv=notrunc` 改掉一個位元組，再解鎖 | 拒絕打開 | 通過：以 `dd` 竄改第 400 byte 後，AES-GCM 驗證失敗，拒絕解鎖還原 | Leo (Mac 2) / 11-07 17:23 ET |
-| B4 | 暴力嘗試 | 用正常方式開啟（不是測試模式），模仿者連續解鎖失敗 5 次 | 出現 5 分鐘倒數 | 通過：一般模式下連續失敗達 5 次後，按鈕鎖定並顯示 `Too many tries. Try again in 281 s.` | Leo (Mac 2) / 11-07 17:31 ET |
-| B5 | 假檔案不能重設次數 | 把任意檔案改名成 `x.airsign`，在倒數前用救援碼試它 | 失敗次數不會被歸零 | 通過：先失敗 4 次後對 `fake.airsign` 送出救援碼（顯示 `not a valid .airsign file`），再失敗 1 次即立刻觸發 5 分鐘鎖定，確認計數未歸零 | Leo (Mac 2) / 11-07 17:31 ET |
-| B6 | 刪除設定檔 | 刪掉 `~/Library/Application Support/AirSign/profile.bin`，重新註冊 | 舊的 `.airsign` 只能用救援碼開 | 通過：刪除 `profile.bin` 重新註冊 3 次後，`masterKey` 已輪替，舊的 `MakeUC.pdf.airsign` 無法以新簽名直接打開，需使用原救援碼 | Leo (Mac 2) / 11-07 17:43 ET |
-| B7 | 聲音輸出不是 AirPods | 把聲音輸出切到 Mac 喇叭後簽名 | 顯示「不計入」，不能解鎖 | 通過：切到 MacBook Air 喇叭後簽名，拒絕解鎖並顯示 `Set the sound output to your AirPods (Control Center → Sound), then sign again. This try was not counted.` | Leo (Mac 2) / 11-07 17:25 ET |
-| B8 | 沒有網路連線 | AirSign 開著時執行 `lsof -i -a -p $(pgrep -f AirSign.app/Contents/MacOS/AirSign)` | 沒有任何輸出 | 通過：對執行中的 AirSign (PID 26001) 執行 `lsof -i -a -p 26001`，完全無輸出（0 個網路連線） | Leo (Mac 2) / 11-07 17:15 ET |
+| B1 | 換一台電腦開檔 | 把 Mac 1 上鎖的 `.airsign` 用 AirDrop 傳到 Mac 2，用 B 的簽名解鎖 | 打不開，顯示「locked on another Mac」 | 通過：簽名通過（score 0.439 vs 0.700），但因本機無對應金鑰而拒絕解鎖，顯示 `locked on another Mac. Use that Mac's recovery code.` | B (Mac 2) / 11-07 16:43 ET |
+| B2 | 救援碼 | 接著在 Mac 2 用 A 的救援碼解鎖 | 打得開，內容一樣 | | |
+| B3 | 竄改檔案 | `printf '\x00' \| dd of=測試檔.airsign bs=1 seek=400 conv=notrunc` 改掉一個位元組，再解鎖 | 拒絕打開 | 通過：以 `dd` 竄改第 400 byte 後，AES-GCM 驗證失敗，拒絕解鎖還原 | B (Mac 2) / 11-07 17:23 ET |
+| B4 | 暴力嘗試 | 用正常方式開啟（不是測試模式），模仿者連續解鎖失敗 5 次 | 出現 5 分鐘倒數 | 通過：一般模式下連續失敗達 5 次後，按鈕鎖定並顯示 `Too many tries. Try again in 281 s.` | B (Mac 2) / 11-07 17:31 ET |
+| B5 | 假檔案不能重設次數 | 把任意檔案改名成 `x.airsign`，在倒數前用救援碼試它 | 失敗次數不會被歸零 | 通過：先失敗 4 次後對 `fake.airsign` 送出救援碼（顯示 `not a valid .airsign file`），再失敗 1 次即立刻觸發 5 分鐘鎖定，確認計數未歸零 | B (Mac 2) / 11-07 17:31 ET |
+| B6 | 刪除設定檔 | 刪掉 `~/Library/Application Support/AirSign/profile.bin`，重新註冊 | 舊的 `.airsign` 只能用救援碼開 | 通過：刪除 `profile.bin` 重新註冊 3 次後，`masterKey` 已輪替，舊的 `MakeUC.pdf.airsign` 無法以新簽名直接打開，需使用原救援碼 | B (Mac 2) / 11-07 17:43 ET |
+| B7 | 聲音輸出不是 AirPods | 把聲音輸出切到 Mac 喇叭後簽名 | 顯示「不計入」，不能解鎖 | 通過：切到 MacBook Air 喇叭後簽名，拒絕解鎖並顯示 `Set the sound output to your AirPods (Control Center → Sound), then sign again. This try was not counted.` | B (Mac 2) / 11-07 17:25 ET |
+| B8 | 沒有網路連線 | AirSign 開著時執行 `lsof -i -a -p $(pgrep -f AirSign.app/Contents/MacOS/AirSign)` | 沒有任何輸出 | 通過：對執行中的 AirSign (PID 26001) 執行 `lsof -i -a -p 26001`，完全無輸出（0 個網路連線） | B (Mac 2) / 11-07 17:15 ET |
 
 ## 資料怎麼交給 C
 

@@ -8,7 +8,7 @@ Judges score success, failure and limits (Technical Demonstration), so we show a
 | Who | Where | Does |
 |---|---|---|
 | **Presenter** | Mic | Speaks the lines below and keeps time |
-| **Owner** (Eric) | MacBook Pro, shares screen, right AirPod | Signs; drives Finder and AirSign |
+| **Owner** (Tester A) | MacBook Pro, shares screen, right AirPod | Signs; drives Finder and AirSign |
 | **Imitator** | Next to the Owner, same right AirPod | Has watched the Owner sign at least 3 times |
 | **Second Mac** (B) | MacBook Air with its own enrollment | Live share or the backup clip for 2:45 |
 
@@ -20,7 +20,7 @@ Judges score success, failure and limits (Technical Demonstration), so we show a
 - [ ] **Webcam overlay of the signing hand:** QuickTime Player → File → New Movie Recording, select the webcam, and drag the window to the bottom-right corner of the shared screen. Or use OBS with a camera source.
 - [ ] Desktop has `tax-return.pdf` with **fake** content and a visible first page. The Trash is empty.
 - [ ] A `.airsign` copy of the same file is already on the MacBook Air, and the recovery code is on paper.
-- [ ] On the MacBook Air: Settings shows **Paired Macs: 0**. If rehearsal paired it, press **Forget paired Macs**, or B's signature will open Eric's file and 2:45 breaks.
+- [ ] On the MacBook Air: Settings shows **Paired Macs: 0**. If rehearsal paired it, press **Forget paired Macs**, or B's signature will open Tester A's file and 2:45 breaks.
 - [ ] A slide or the README's "What we measured" open in a tab for the numbers at 3:15.
 - [ ] Discord: share the **window or screen at 1080p**, test once that the judges' view shows the overlay.
 - [ ] The backup demo video is ready to share if anything breaks.

@@ -75,7 +75,7 @@ def b_shape(u: np.ndarray) -> np.ndarray:
 def make_test_logs(out: Path, rng: np.random.Generator, owner_n: int = 20, imit_n: tuple[int, int] = (10, 10),
                    a4_n: tuple[int, int] = (15, 10), a5_n: int = 5, unknown_n: int = 2,
                    sessions=("S1-tonight", "S2-midnight", "S3-morning")) -> None:
-    """Fake test-mode records like AttemptLog.swift writes, under test protocol v2, for two Macs (mac1: Eric, mac2: B).
+    """Fake test-mode records like AttemptLog.swift writes, under test protocol v2, for two Macs (mac1: A, mac2: B).
 
     Owners enroll once, in S1, and every later attempt is logged against that enrollment.
     S1: A1, A2, A3, A4 (a4_n[0] per imitator), A5. S2: A1 only. S3: A1 and A4 (a4_n[1], blind).
@@ -84,8 +84,8 @@ def make_test_logs(out: Path, rng: np.random.Generator, owner_n: int = 20, imit_
     """
     from matcher import DEFAULT, Attempt, distance  # local: keep the module import light
 
-    owners = [("mac1", "Eric", "right", owner_shape, (0.0, 0.7, -0.7), ["B", "C"]),
-              ("mac2", "B", "left", b_shape, (0.2, 0.6, -0.75), ["Eric", "C"])]
+    owners = [("mac1", "A", "right", owner_shape, (0.0, 0.7, -0.7), ["B", "C"]),
+              ("mac2", "B", "left", b_shape, (0.2, 0.6, -0.75), ["A", "C"])]
     for mac, owner, side, shape, grav, imitators in owners:
         d = out / mac / "test-logs"
         d.mkdir(parents=True, exist_ok=True)
