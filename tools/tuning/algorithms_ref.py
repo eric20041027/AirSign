@@ -1,6 +1,6 @@
 """Reference versions of the frozen baseline and the three pre-registered challengers.
 
-docs/algorithm-bakeoff.md puts the candidates in tools/tuning/algorithms.py (role B).
+archive/makeuc-2026/algorithm-bakeoff.md puts the candidates in tools/tuning/algorithms.py (role B).
 bakeoff.py uses that file when it has these names, and falls back to this one so
 the analysis runs before it lands. The math follows quick_candidates.py (the
 prototype reference), with numpy DTW from matcher.py for speed; a test checks

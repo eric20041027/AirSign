@@ -1,7 +1,7 @@
-"""Algorithm bake-off (docs/algorithm-bakeoff.md): the frozen baseline against the three pre-registered challengers.
+"""Algorithm bake-off (archive/makeuc-2026/algorithm-bakeoff.md): the frozen baseline against the three pre-registered challengers.
 
 Usage:
-  python bakeoff.py C:/airsign-data/mac1 C:/airsign-data/mac2 --report ../../docs/algorithm-comparison.md
+  python bakeoff.py /path/to/airsign-data/mac1 /path/to/airsign-data/mac2 --report ../../archive/makeuc-2026/algorithm-comparison.md
 
 The folders hold the app's test-mode records (searched recursively); keep them
 outside the repo. The baseline is the app today at thresholdFactor 1.25 and is
@@ -42,7 +42,7 @@ def load_algorithms() -> tuple[dict, dict[str, str]]:
     algorithms.py when role B's file has them, otherwise from the reference port."""
     algs, source = {"baseline": R.baseline}, {"baseline": "algorithms_ref.py (checked against the app's logged scores)"}
     try:
-        import algorithms as B  # role B's file, docs/algorithm-bakeoff.md
+        import algorithms as B  # role B's file, archive/makeuc-2026/algorithm-bakeoff.md
         theirs = getattr(B, "ALGORITHMS", {})
     except ImportError:
         theirs = {}
@@ -208,7 +208,7 @@ def report(data: E.Data, results: list[Result], source: dict[str, str], note: st
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("dirs", type=Path, nargs="+", help="folders with test-mode records (outside the repo)")
-    ap.add_argument("--report", type=Path, required=True, help="e.g. ../../docs/algorithm-comparison.md")
+    ap.add_argument("--report", type=Path, required=True, help="e.g. ../../archive/makeuc-2026/algorithm-comparison.md")
     ap.add_argument("--note", default="", help="extra line for the data section, e.g. the paper tally of discarded tries")
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")

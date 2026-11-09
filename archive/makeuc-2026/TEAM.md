@@ -3,8 +3,8 @@
 交件期限：**2026-11-08 12:00（美東時間）**。評審是同一天 13:00–16:00，在 Discord 上進行。
 
 開工前先讀這兩份：
-- 設計：[docs/superpowers/specs/2026-11-07-airsign-design.md](docs/superpowers/specs/2026-11-07-airsign-design.md)
-- 計畫（10 個任務）：[docs/superpowers/plans/2026-11-07-airsign.md](docs/superpowers/plans/2026-11-07-airsign.md)
+- 設計：[superpowers/specs/2026-11-07-airsign-design.md](superpowers/specs/2026-11-07-airsign-design.md)
+- 計畫（10 個任務）：[superpowers/plans/2026-11-07-airsign.md](superpowers/plans/2026-11-07-airsign.md)
 
 ## 分工
 

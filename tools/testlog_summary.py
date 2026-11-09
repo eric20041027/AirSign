@@ -14,7 +14,7 @@ from pathlib import Path
 
 DEFAULT_DIR = Path.home() / "Library/Application Support/AirSign/test-logs"
 
-# Targets per tester from docs/test-protocol.md (protocol v2).
+# Targets per tester from archive/makeuc-2026/test-protocol.md (protocol v2).
 TARGETS = {
     ("S1-tonight", "A1-owner"): 20,
     ("S2-midnight", "A1-owner"): 20,

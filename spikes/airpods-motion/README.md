@@ -1,3 +1,5 @@
+> Hackathon prototype from MakeUC 2026, kept for reference and not maintained. The app lives in [airsign/](../../airsign/).
+
 # AirPods motion spike (throwaway)
 
 Built 2026-11-07 during MakeUC to see what AirPods head-motion data looks like. Not the project. No tests.

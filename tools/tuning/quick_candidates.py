@@ -1,6 +1,6 @@
 """Reference implementations of the bake-off challengers, pure Python, written for a quick look at the spike data.
 
-Pre-registered challengers: gyro_x2, normalized_nfm, dtw_plus_global (see docs/algorithm-bakeoff.md).
+Pre-registered challengers: gyro_x2, normalized_nfm, dtw_plus_global (see archive/makeuc-2026/algorithm-bakeoff.md).
 AUC alone is misleading here: always test with the real threshold rule. Usage:
     python3 -I quick_candidates.py <folder with spike attempt-*.json>
 """

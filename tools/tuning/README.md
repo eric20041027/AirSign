@@ -12,10 +12,10 @@ a folder outside it. The report only contains counts and settings.
 ```bash
 cd tools/tuning
 python -m unittest discover -s .
-python tune.py /path/outside/repo/sessions --report ../../docs/tuning.md
+python tune.py /path/outside/repo/sessions --report ../../archive/makeuc-2026/tuning.md
 ```
 
-The two fair rounds from 2026-11-07, each with its own 3 templates (this produced `docs/tuning.md`):
+The two fair rounds from 2026-11-07, each with its own 3 templates (this produced `archive/makeuc-2026/tuning.md`):
 
 ```bash
 python tune.py /path/outside/repo/sessions \
@@ -31,18 +31,18 @@ then the fewest imitators accepted wins, then the fewest Swift constants changed
 - `--min-dur 1.2` drops verify attempts that are 1.2 s or shorter.
 - `python synth.py OUT_DIR` writes fake attempts for a dry run. Don't tune on them.
 
-## Test-mode records (docs/test-protocol.md)
+## Test-mode records (archive/makeuc-2026/test-protocol.md)
 
 After each session, unzip each Mac's `airsign-test-logs-*.zip` into its own folder
 **outside the repo**, then:
 
 ```bash
-python tune.py --test-logs C:/airsign-data/mac1-S1 C:/airsign-data/mac2-S1 --report ../../docs/evaluation.md
+python tune.py --test-logs /path/to/airsign-data/mac1-S1 /path/to/airsign-data/mac2-S1 --report ../../archive/makeuc-2026/evaluation.md
 ```
 
 Pass every session's folders at once; folders are searched recursively. Add
 `--note "Discarded: ..."` for the paper tally of discarded tries. This follows test
-protocol v2 and writes `docs/evaluation.md` plus two charts in `docs/evaluation/`:
+protocol v2 and writes `archive/makeuc-2026/evaluation.md` plus two charts in `archive/makeuc-2026/evaluation/`:
 
 - Owners enroll once, in S1. Every attempt, S2 and S3 included, is scored against
   the owner's S1 templates.
@@ -54,10 +54,10 @@ protocol v2 and writes `docs/evaluation.md` plus two charts in `docs/evaluation/
   as FAR; A3 and A4 as attack success rates. EER is for S1 only.
 - It checks that the Python replay matches the scores the app logged.
 
-## Algorithm bake-off (docs/algorithm-bakeoff.md)
+## Algorithm bake-off (archive/makeuc-2026/algorithm-bakeoff.md)
 
 ```bash
-python bakeoff.py C:/airsign-data/mac1-S1 C:/airsign-data/mac2-S1 --report ../../docs/algorithm-comparison.md
+python bakeoff.py /path/to/airsign-data/mac1-S1 /path/to/airsign-data/mac2-S1 --report ../../archive/makeuc-2026/algorithm-comparison.md
 ```
 
 - Compares the frozen `baseline` with exactly three challengers: `gyro_x2`, `normalized_nfm`, `dtw_plus_global`.
@@ -73,8 +73,8 @@ python bakeoff.py C:/airsign-data/mac1-S1 C:/airsign-data/mac2-S1 --report ../..
 
 - `matcher.py`: loading, features, banded DTW, distance, scoring
 - `tune.py`: grid search and the markdown report; `--test-logs` hands off to `evaluate.py`
-- `evaluate.py`: protocol v2 core (S1 templates, Wilson, S1 factor, EER) and `docs/evaluation.md`
-- `bakeoff.py`: baseline vs the three challengers and the switch rule, `docs/algorithm-comparison.md`
+- `evaluate.py`: protocol v2 core (S1 templates, Wilson, S1 factor, EER) and `archive/makeuc-2026/evaluation.md`
+- `bakeoff.py`: baseline vs the three challengers and the switch rule, `archive/makeuc-2026/algorithm-comparison.md`
 - `algorithms_ref.py`: reference baseline and challengers (fallback until `algorithms.py` lands)
 - `quick_candidates.py`: the prototype reference the port is tested against
 - `svgchart.py`: the two static SVG charts (standard library only)

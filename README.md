@@ -23,7 +23,7 @@
   <a href="#install">Install</a> ·
   <a href="#security-model">Security model</a> ·
   <a href="#roadmap">Roadmap</a> ·
-  <a href="docs/technical-guide-zh.md">中文技術文件</a>
+  <a href="archive/makeuc-2026/technical-guide-zh.md">中文技術文件</a>
 </p>
 
 ---
@@ -83,7 +83,7 @@ The score is a banded dynamic-time-warping distance to your three enrolled signa
 
 ## What we measured
 
-We built a logged test lab into the app and ran it on two Macs during the event: the owner signing; teammates signing their own names on the owner's AirPods; imitating after watching once; and imitating after practising with a video. Protocol (in Chinese): [docs/test-protocol.md](docs/test-protocol.md). Session records: [docs/test-sessions.md](docs/test-sessions.md).
+We built a logged test lab into the app and ran it on two Macs during the event: the owner signing; teammates signing their own names on the owner's AirPods; imitating after watching once; and imitating after practising with a video. Protocol (in Chinese): [archive/makeuc-2026/test-protocol.md](archive/makeuc-2026/test-protocol.md). Session records: [archive/makeuc-2026/test-sessions.md](archive/makeuc-2026/test-sessions.md).
 
 **First session, both Macs**
 
@@ -171,7 +171,8 @@ If the Finder items don't appear, enable them in System Settings → Keyboard �
 | Path | What's there |
 |---|---|
 | [`airsign/`](airsign/) | The Swift package: `AirSignCore` (matcher, crypto, file locking, lockout) and the `AirSign` app |
-| [`docs/`](docs/) | Design and threat model, test protocol and sessions, brand files |
+| [`docs/`](docs/) | Brand files, images and development plans |
+| [`archive/makeuc-2026/`](archive/makeuc-2026/) | Hackathon records: test protocol and sessions, tuning, Devpost text, demo script, team plan (some in Chinese) |
 | [`tools/`](tools/) | Python ports of the matcher for tuning and the algorithm comparison |
 | [`spikes/airpods-motion/`](spikes/airpods-motion/) | The first prototype that proved the AirPods signal |
 

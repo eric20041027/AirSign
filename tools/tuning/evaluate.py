@@ -1,7 +1,7 @@
-"""Test protocol v2 analysis (docs/test-protocol.md, docs/algorithm-bakeoff.md): shared core plus docs/evaluation.md.
+"""Test protocol v2 analysis (archive/makeuc-2026/test-protocol.md, archive/makeuc-2026/algorithm-bakeoff.md): shared core plus archive/makeuc-2026/evaluation.md.
 
 Run through tune.py:
-  python tune.py --test-logs C:/airsign-data/mac1 C:/airsign-data/mac2 --report ../../docs/evaluation.md
+  python tune.py --test-logs /path/to/airsign-data/mac1 /path/to/airsign-data/mac2 --report ../../archive/makeuc-2026/evaluation.md
 
 Rules this file encodes:
 - The baseline (the app today, thresholdFactor 1.25) is frozen and primary.
@@ -318,7 +318,7 @@ def quotable(cases: list[Case], rs: list[float], factor: float) -> list[str]:
     return out
 
 
-# ---------- docs/evaluation.md ----------
+# ---------- archive/makeuc-2026/evaluation.md ----------
 
 def report(data: Data, rs: list[float], tuned: float | None, match: float, charts: dict[str, str],
            note: str = "") -> str:
