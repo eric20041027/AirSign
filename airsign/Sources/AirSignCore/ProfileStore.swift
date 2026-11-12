@@ -63,8 +63,7 @@ public struct ProfileStore {
     }
 
     public func load(now: Date = Date(), boot: BootClock? = BootClock.current()) throws -> Profile? {
-        let url = directory.appendingPathComponent(Self.fileName)
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        guard try profileExists() else { return nil }
         let profileKey = try key(Self.profileKeyName)
         let lockoutData = try secrets.load(Self.lockoutName)
         let profile = try readProfile(using: profileKey, lockoutData: lockoutData, now: now, boot: boot)
@@ -73,8 +72,11 @@ public struct ProfileStore {
     }
 
     public func launchState(now: Date = Date(), boot: BootClock? = BootClock.current()) -> LaunchState {
-        let url = directory.appendingPathComponent(Self.fileName)
-        guard FileManager.default.fileExists(atPath: url.path) else { return .noProfile }
+        do {
+            guard try profileExists() else { return .noProfile }
+        } catch {
+            return .blocked(.profileUnreadable)
+        }
         let profileKey: Data?, masterKey: Data?, lockoutData: Data?
         do {
             profileKey = try secrets.load(Self.profileKeyName)
@@ -96,6 +98,17 @@ public struct ProfileStore {
             catch { return .blocked(.storeError) }
         }
         return .ready(profile)
+    }
+
+    /// Only confirmed absence permits enrollment; an access error must block it.
+    private func profileExists() throws -> Bool {
+        do {
+            _ = try FileManager.default.attributesOfItem(
+                atPath: directory.appendingPathComponent(Self.fileName).path)
+            return true
+        } catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {
+            return false
+        }
     }
 
     private func readProfile(using profileKey: SymmetricKey, lockoutData: Data?,
@@ -132,18 +145,19 @@ public struct ProfileStore {
     /// so a newly enrolled signature can never open files locked earlier. Those open with their recovery code.
     /// Pairings belong to the previous owner too, so they are forgotten here.
     public func createProfile(_ profile: Profile, replacingExisting: Bool = false) throws {
-        let url = directory.appendingPathComponent(Self.fileName)
-        if FileManager.default.fileExists(atPath: url.path), !replacingExisting {
+        if try profileExists(), !replacingExisting {
             throw ProfileStoreError.profileExists
         }
+        // Invalidate the old profile before changing its master key, so a partial reset stays blocked.
+        try secrets.delete(Self.profileKeyName)
         // Delete before saving so unreadable old items cannot prevent a reset.
-        for name in [Self.masterKeyName, Self.profileKeyName] {
-            try secrets.delete(name)
-            let key = SymmetricKey(size: .bits256)
-            try secrets.save(key.withUnsafeBytes { Data($0) }, as: name)
-        }
+        try secrets.delete(Self.masterKeyName)
+        let masterKey = SymmetricKey(size: .bits256)
+        try secrets.save(masterKey.withUnsafeBytes { Data($0) }, as: Self.masterKeyName)
         try forgetPairedMacs()
         try secrets.delete(Self.lockoutName)
+        let profileKey = SymmetricKey(size: .bits256)
+        try secrets.save(profileKey.withUnsafeBytes { Data($0) }, as: Self.profileKeyName)
         try save(profile)
     }
 

@@ -296,3 +296,48 @@ private func locked(at time: Date, boot: BootClock?) -> Lockout {
     #expect(try store.load(now: start.addingTimeInterval(100), boot: later)?.lockout
         .remaining(now: start.addingTimeInterval(100), boot: later) == 14_300)
 }
+
+@Test func aFailedResetNeverLeavesTheOldProfileReadyWithANewMasterKey() throws {
+    for name in ["profile-key", "master-key", "paired-recovery-keys", "lockout"] {
+        for failDelete in [true, false] {
+            let secrets = FailingSecretStore()
+            let store = ProfileStore(directory: tempDir(), secrets: secrets)
+            let old = try testProfile("UID-A"), fresh = try testProfile("UID-B")
+            try store.createProfile(old)
+            let master = try secrets.inner.load("master-key")
+            if failDelete { secrets.failingDeletes = [name] } else { secrets.failingSaves = [name] }
+            do { try store.createProfile(fresh, replacingExisting: true) } catch {}
+            switch store.launchState() {
+            case .ready(let p):
+                if p.enrollment == old.enrollment {
+                    #expect(try secrets.inner.load("master-key") == master, "old profile ready with a new master key (\(name), delete: \(failDelete))")
+                } else {
+                    #expect(p == fresh)
+                }
+            case .blocked:
+                break
+            case .noProfile:
+                Issue.record("a reset must never look like a first run (\(name), delete: \(failDelete))")
+            }
+            secrets.failingDeletes = []
+            secrets.failingSaves = []
+            try store.createProfile(fresh, replacingExisting: true)
+            #expect(store.launchState() == .ready(fresh))
+        }
+    }
+}
+
+@Test func anInaccessibleProfileFolderBlocksInsteadOfLookingLikeAFirstRun() throws {
+    let fm = FileManager.default
+    let dir = tempDir(), secrets = InMemorySecretStore()
+    let store = ProfileStore(directory: dir, secrets: secrets)
+    #expect(store.launchState() == .noProfile)   // the folder does not exist yet: confirmed absence
+    try store.createProfile(try testProfile("UID-A"))
+    let master = try secrets.load("master-key")
+    try fm.setAttributes([.posixPermissions: 0o000], ofItemAtPath: dir.path)
+    defer { try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path) }
+    #expect(store.launchState() == .blocked(.profileUnreadable))
+    #expect(throws: (any Error).self) { try store.createProfile(try testProfile("UID-B")) }
+    #expect(throws: (any Error).self) { try store.createProfile(try testProfile("UID-B"), replacingExisting: true) }
+    #expect(try secrets.load("master-key") == master)
+}

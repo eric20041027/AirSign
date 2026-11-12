@@ -30,12 +30,13 @@ let forgeryShape: (Double) -> SIMD3<Double> = { u in
     SIMD3(3 * sin(4 * .pi * u + 0.9), 2 * cos(4 * .pi * u) + 0.8, 1.5 * sin(3 * .pi * u) + 1)
 }
 
-/// Reads of the listed names fail until that name is deleted; saves of the listed names always fail.
+/// Reads of the listed names fail until deleted; listed saves and deletes always fail.
 final class FailingSecretStore: SecretStore {
     struct Denied: Error {}
     let inner = InMemorySecretStore()
     var failingLoads: Set<String> = []
     var failingSaves: Set<String> = []
+    var failingDeletes: Set<String> = []
     func load(_ name: String) throws -> Data? {
         if failingLoads.contains(name) { throw Denied() }
         return try inner.load(name)
@@ -45,6 +46,7 @@ final class FailingSecretStore: SecretStore {
         try inner.save(data, as: name)
     }
     func delete(_ name: String) throws {
+        if failingDeletes.contains(name) { throw Denied() }
         failingLoads.remove(name)
         try inner.delete(name)
     }
