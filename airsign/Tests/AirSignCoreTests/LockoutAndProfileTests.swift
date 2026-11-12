@@ -46,7 +46,7 @@ import Testing
     let store = ProfileStore(directory: dir, secrets: InMemorySecretStore())
     let e = try enroll((0..<3).map { _ in Signature(samples: strokes(ownerShape, noise: 0.2)) }, deviceUID: "UID-A")
     var p = Profile(enrollment: e, recoveryPublicKey: Data(repeating: 3, count: 32), lockout: Lockout(), demoMode: false)
-    try store.save(p)
+    try store.createProfile(p)
     let file = dir.appendingPathComponent("profile.bin")
     let snapshot = try Data(contentsOf: file)
     for _ in 0..<4 { p.lockout.recordFailure(now: Date()) }
@@ -84,10 +84,12 @@ import Testing
 @Test func creatingAProfileRotatesTheMasterKey() throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let store = ProfileStore(directory: dir, secrets: InMemorySecretStore())
+    try store.createProfile(try testProfile("UID-A"))
     let before = try store.masterKey()
     let code = RecoveryCode.generate()
     let pub = try RecoveryCode.privateKey(for: code).publicKey
     let sealed = try LockedFile.seal(Data("owner".utf8), originalName: "a.txt", masterKey: before, recoveryPublicKey: pub)
+    try FileManager.default.removeItem(at: dir.appendingPathComponent("profile.bin"))
     let e = try enroll((0..<3).map { _ in Signature(samples: strokes(ownerShape, noise: 0.2)) }, deviceUID: "UID-B")
     try store.createProfile(Profile(enrollment: e, recoveryPublicKey: Data(repeating: 1, count: 32), lockout: Lockout(), demoMode: false))
     // A fresh enrollment (for example after someone deleted profile.bin) must not inherit the old master key.
@@ -123,7 +125,7 @@ import Testing
     #expect(try store.load() == nil)
     let e = try enroll((0..<3).map { _ in Signature(samples: strokes(ownerShape, noise: 0.2)) }, deviceUID: "UID-A")
     let p = Profile(enrollment: e, recoveryPublicKey: Data(repeating: 7, count: 32), lockout: Lockout(), demoMode: true)
-    try store.save(p)
+    try store.createProfile(p)
     #expect(try store.load() == p)
     let raw = try Data(contentsOf: dir.appendingPathComponent("profile.bin"))
     #expect(raw.range(of: Data("UID-A".utf8)) == nil)
@@ -200,4 +202,97 @@ private func locked(at time: Date, boot: BootClock?) -> Lockout {
 @Test func theBootClockReadsTheSameSessionAndNeverGoesBack() throws {
     let first = try #require(BootClock.current()), second = try #require(BootClock.current())
     #expect(!first.session.isEmpty && first.session == second.session && second.uptime >= first.uptime)
+}
+
+@Test func readingAMissingKeyThrowsAndCreatesNothing() throws {
+    let secrets = InMemorySecretStore()
+    let store = ProfileStore(directory: tempDir(), secrets: secrets)
+    #expect(throws: ProfileStoreError.keyMissing("master-key")) { try store.masterKey() }
+    #expect(throws: ProfileStoreError.keyMissing("profile-key")) { try store.save(testProfile()) }
+    #expect(try secrets.load("master-key") == nil && secrets.load("profile-key") == nil)
+}
+
+@Test func launchStateTellsFirstRunReadyAndBlockedApart() throws {
+    let dir = tempDir(), secrets = FailingSecretStore()
+    let store = ProfileStore(directory: dir, secrets: secrets)
+    #expect(store.launchState() == .noProfile)
+    let p = try testProfile()
+    try store.createProfile(p)
+    #expect(store.launchState() == .ready(p))
+
+    secrets.failingLoads = ["profile-key"]   // for example the Keychain prompt was denied
+    #expect(store.launchState() == .blocked(.storeError))
+    secrets.failingLoads = []
+
+    let master = try #require(try secrets.load("master-key"))
+    try secrets.inner.delete("master-key")
+    #expect(store.launchState() == .blocked(.keyMissing))
+    #expect(try secrets.load("master-key") == nil)   // looking never creates it
+    try secrets.save(master, as: "master-key")
+
+    let file = dir.appendingPathComponent("profile.bin")
+    let good = try Data(contentsOf: file)
+    try Data("garbage".utf8).write(to: file)
+    #expect(store.launchState() == .blocked(.profileUnreadable))
+    try good.write(to: file)
+    #expect(store.launchState() == .ready(p))
+}
+
+@Test func onlyAFirstRunAllowsEnrollingAndOnlyReadyAllowsLocking() throws {
+    let p = try testProfile()
+    #expect(LaunchState.noProfile.allowsEnrollment && !LaunchState.noProfile.allowsLocking)
+    #expect(!LaunchState.ready(p).allowsEnrollment && LaunchState.ready(p).allowsLocking)
+    for reason in [BlockReason.keyMissing, .profileUnreadable, .storeError] {
+        #expect(!LaunchState.blocked(reason).allowsEnrollment && !LaunchState.blocked(reason).allowsLocking)
+    }
+}
+
+@Test func enrollingNeverReplacesAnExistingProfileUnlessResetting() throws {
+    let secrets = InMemorySecretStore()
+    let store = ProfileStore(directory: tempDir(), secrets: secrets)
+    let first = try testProfile("UID-A"), second = try testProfile("UID-B")
+    try store.createProfile(first)
+    let master = try secrets.load("master-key")
+    #expect(throws: ProfileStoreError.profileExists) { try store.createProfile(second) }
+    #expect(try secrets.load("master-key") == master)
+    #expect(store.launchState() == .ready(first))
+    try store.createProfile(second, replacingExisting: true)
+    #expect(try secrets.load("master-key") != master)
+    #expect(store.launchState() == .ready(second))
+}
+
+@Test func resetWorksWhenTheOldKeysCannotBeRead() throws {
+    let secrets = FailingSecretStore()
+    let store = ProfileStore(directory: tempDir(), secrets: secrets)
+    try store.createProfile(try testProfile("UID-A"))
+    secrets.failingLoads = ["profile-key", "master-key", "paired-recovery-keys", "lockout"]
+    let fresh = try testProfile("UID-B")
+    try store.createProfile(fresh, replacingExisting: true)
+    #expect(store.launchState() == .ready(fresh))
+}
+
+@Test func aResetThatFailsHalfWayCanBeRunAgain() throws {
+    let secrets = FailingSecretStore()
+    let store = ProfileStore(directory: tempDir(), secrets: secrets)
+    try store.createProfile(try testProfile("UID-A"))
+    secrets.failingSaves = ["profile-key"]
+    let fresh = try testProfile("UID-B")
+    #expect(throws: (any Error).self) { try store.createProfile(fresh, replacingExisting: true) }
+    if case .blocked = store.launchState() {} else { Issue.record("a half-finished reset must leave the app blocked") }
+    secrets.failingSaves = []
+    try store.createProfile(fresh, replacingExisting: true)
+    #expect(store.launchState() == .ready(fresh))
+}
+
+@Test func aMissingKeychainLockoutCopyStartsTheLongestCooldownOnce() throws {
+    let secrets = InMemorySecretStore()
+    let store = ProfileStore(directory: tempDir(), secrets: secrets)
+    try store.createProfile(try testProfile())
+    try secrets.delete("lockout")
+    let start = Date(timeIntervalSince1970: 1_000_000), boot = BootClock(session: "A", uptime: 50)
+    #expect(try store.load(now: start, boot: boot)?.lockout.remaining(now: start, boot: boot) == 14_400)
+    #expect(try secrets.load("lockout") != nil)
+    let later = BootClock(session: "A", uptime: 150)
+    #expect(try store.load(now: start.addingTimeInterval(100), boot: later)?.lockout
+        .remaining(now: start.addingTimeInterval(100), boot: later) == 14_300)
 }
