@@ -32,3 +32,6 @@ These are documented design limits, not vulnerabilities (see the README's [Secur
 - The AirPods check is a deterrent, not a secret: the AirPods' ID can be read nearby, so someone who spoofs it is let through to the signature check, which they still have to pass.
 - Anyone with your recovery code and the file can open it: the code is a master key, keep it offline.
 - Locking moves the original to the Trash; it stays there in plaintext until you empty the Trash.
+- Someone who can use the Mac as the owner can roll the lockout back by copying and restoring AirSign's folder and the Keychain file. A restart followed by a clock change also ends a cooldown.
+- A force-quit during a restore can leave a hidden plaintext `.airsign-partial-…` item next to the locked file until AirSign next unlocks something in that folder.
+- A paired Mac stores the other Mac's recovery key in its login Keychain. Reading that Keychain is as good as having the other Mac's recovery code.

@@ -22,6 +22,7 @@
   <a href="#how-it-works">How it works</a> ·
   <a href="#what-we-measured">What we measured</a> ·
   <a href="#install">Install</a> ·
+  <a href="#pairing-a-second-mac">Pairing a second Mac</a> ·
   <a href="#security-model">Security model</a> ·
   <a href="#roadmap">Roadmap</a> ·
   <a href="archive/makeuc-2026/technical-guide-zh.md">中文技術文件</a>
@@ -140,6 +141,16 @@ If the Finder items don't appear, enable them in System Settings → Keyboard �
   <img alt="Left: the black sensor on an AirPod Pro, circled. Right: an AirPod held like a pen, with the bottom of the stem as the pen tip." src="docs/images/hold-airpod.jpg" width="720">
 </p>
 
+## Pairing a second Mac
+
+1. Enroll a signature on the second Mac with its own AirPods.
+2. Copy one file locked on the first Mac to the second Mac. Right-click it → **Unlock with AirSign**, then click **Use recovery code…**.
+3. Enter the first Mac's recovery code, tick **Remember on this Mac** and click **Unlock**. From then on, the first Mac's files open on the second Mac with the second Mac's AirPods and signature.
+
+Pairing is one-way. It stores the first Mac's recovery key in the second Mac's login Keychain, in the `paired-recovery-keys` item. The second Mac can then open everything the first Mac ever locked.
+
+On the second Mac, Settings → **Forget paired Macs** removes the stored keys. Saving a new enrollment from scratch or after a reset also forgets pairings.
+
 ## Uninstall
 
 Deleting AirSign's Keychain items removes the master key, so existing `.airsign` files will then open only with your recovery code. Unlock anything you want to keep first. Then quit AirSign and run these from the root of your clone:
@@ -164,18 +175,21 @@ Errors saying an item or domain doesn't exist are fine: not every install create
 | Attacker | Stopped? | Why |
 |---|---|---|
 | Copies or emails your `.airsign` file | ✅ | The key never leaves your Mac's Keychain |
-| Uses your unlocked Mac while you're away | ⚠️ Partly | They must use your AirPods and match your signature; the lockout grows to 4 hours |
+| Uses your unlocked Mac while you're away | ⚠️ Partly | They must use your AirPods and match your signature. The lockout slows them for up to 4 hours, but someone using your Mac as you can put AirSign's saved state back and try again, so it is only a delay |
 | Steals your AirPods | ⚠️ Partly | They also need your Mac, and then it's the imitation case below |
 | Tries with their own AirPods | ✅ | Rejected whatever the score (a deterrent: the AirPods' ID is not a secret key) |
 | Watched you sign and imitates | ⚠️ Partly | 0/81 watched or practised in our tests, see above |
 | Knows your Mac login password and reads the Keychain | ❌ | The signature guards the key; it isn't the key (see roadmap) |
+| Reads the Keychain of a Mac you paired | ❌ | A paired Mac keeps the other Mac's recovery key, which is as good as its recovery code |
 | Has your recovery code and the file | ❌ | The code is a master key: keep it offline |
 
 **Encryption in short:** each file is sealed with its own 256-bit AES-GCM key; the header is authenticated with the content. That key is wrapped twice: with a master key in the login Keychain, and with HPKE (X25519, ChaCha20-Poly1305) to a public key derived from your recovery code. Turn on FileVault and empty the Trash after locking to get the full protection.
 
+A restart followed by a clock change also ends a cooldown. If AirSign is force-quit while restoring, a hidden plaintext `.airsign-partial-…` item can stay next to the locked file until AirSign next unlocks something in that folder.
+
 ## Under the hood
 
-- **Swift + SwiftUI** app with Finder Services menu items; core logic in a tested `AirSignCore` library (62 unit tests).
+- **Swift + SwiftUI** app with Finder Services menu items; core logic in a tested `AirSignCore` library (85 unit tests).
 - **CoreMotion** `CMHeadphoneMotionManager` streams the AirPod's attitude, rotation rate, acceleration and gravity (we measured 50 Hz on AirPods Pro 3 and 25 Hz on AirPods 4).
 - **Matcher:** 9 features per sample, banded DTW (25% band), a duration penalty, the minimum distance to the enrolled templates.
 - **CryptoKit** for AES-GCM and HPKE; the **Keychain** for the master key and a copy of the lockout counter.
