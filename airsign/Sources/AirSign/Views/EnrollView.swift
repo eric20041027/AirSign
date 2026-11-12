@@ -6,7 +6,8 @@ struct EnrollView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(model.isReenrolling ? "Choose your new air signature" : "Enroll your air signature")
+            Text(model.isResetting ? "Enroll a new air signature" :
+                 (model.isReenrolling ? "Choose your new air signature" : "Enroll your air signature"))
                 .font(.title2.bold())
             Text("Hold one AirPod in your signing hand with a finger over its sensor, and keep the other one in the case. Press Space, sign in the air for about 2 seconds, then hold still. After \(MatcherConfig.enrollCount) signatures, sign \(MatcherConfig.confirmCount) more times so AirSign can check it recognizes you.")
                 .foregroundStyle(.secondary)
@@ -24,7 +25,7 @@ struct EnrollView: View {
                 Button("Start over") { model.restartEnrollment() }
                     .disabled(model.enrolledSoFar.isEmpty)
                 Spacer()
-                if model.profile != nil {
+                if model.isReenrolling || model.isResetting {
                     Button("Cancel") { model.cancelToHome() }
                 }
             }

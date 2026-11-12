@@ -21,6 +21,7 @@ struct ContentView: View {
                     case .unlock, .confirmIdentity: UnlockView()
                     case .lab: TestLabView()
                     case .home: HomeView()
+                    case .blocked: BlockedView()
                     }
                 }
             }
