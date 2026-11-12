@@ -5,8 +5,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP=build/AirSign.app
-swift build -c release --product AirSign
-BIN_DIR="$(swift build -c release --show-bin-path)"
+EXTRA=()
+if [[ "${AIRSIGN_LAB:-0}" == "1" ]]; then
+  EXTRA=(-Xswiftc -DAIRSIGN_LAB)
+fi
+swift build -c release --product AirSign ${EXTRA[@]+"${EXTRA[@]}"}
+BIN_DIR="$(swift build -c release --show-bin-path ${EXTRA[@]+"${EXTRA[@]}"})"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -26,4 +30,8 @@ if [[ -z "$SIGN_ID" ]]; then
 fi
 
 codesign --force --sign "$SIGN_ID" --options runtime "$APP"
-echo "Built $APP (signed with: $SIGN_ID)"
+if [[ "${AIRSIGN_LAB:-0}" == "1" ]]; then
+  echo "Built $APP (lab build, signed with: $SIGN_ID)"
+else
+  echo "Built $APP (signed with: $SIGN_ID)"
+fi

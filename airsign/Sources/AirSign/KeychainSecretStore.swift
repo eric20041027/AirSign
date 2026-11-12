@@ -6,9 +6,13 @@ enum KeychainError: Error {
     case status(OSStatus)
 }
 
-/// Stores secrets as generic passwords under the service `com.makeuc.airsign`.
+/// A separate service keeps lab sandbox secrets away from the installed app's keys.
 final class KeychainSecretStore: SecretStore {
-    private let service = "com.makeuc.airsign"
+    private let service: String
+
+    init(service: String = "com.makeuc.airsign") {
+        self.service = service
+    }
 
     func load(_ name: String) throws -> Data? {
         var query = baseQuery(name)

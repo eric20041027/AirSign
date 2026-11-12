@@ -7,8 +7,7 @@ enum Tone {
     case neutral, good, warn, bad
 }
 
-/// Drives every flow: enroll, lock, unlock by signature or recovery code, changing the signature,
-/// and (only when launched with `--test-mode`) the test lab.
+/// Drives enrollment, file locking, signature and recovery unlock, and settings.
 @MainActor
 final class AppModel: ObservableObject {
     enum Screen: Equatable {
@@ -47,6 +46,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var pairedMacCount = 0
     @Published var thresholdOverride: Double?
 
+    #if AIRSIGN_LAB
     /// `open -a AirSign --args --test-mode` adds the test lab. Lab attempts open no files, so they
     /// never count toward the lockout; every other flow keeps it.
     let testMode = CommandLine.arguments.contains("--test-mode")
@@ -56,30 +56,52 @@ final class AppModel: ObservableObject {
     @Published var testSession = TestSession.tonight
     @Published var testScenario = TestScenario.owner
     @Published private(set) var labCounts: [String: Int] = [:]
-
-    private let store = ProfileStore(directory: ProfileStore.defaultDirectory, secrets: KeychainSecretStore())
+    let sandboxPath = ProcessInfo.processInfo.environment["AIRSIGN_SANDBOX"]
     private let attemptLog = AttemptLog(directory: AttemptLog.defaultDirectory)
+    #else
+    let testMode = false
+    #endif
+
+    private let store: ProfileStore = {
+        #if AIRSIGN_LAB
+        if let path = ProcessInfo.processInfo.environment["AIRSIGN_SANDBOX"] {
+            return ProfileStore(directory: URL(fileURLWithPath: path), secrets: KeychainSecretStore(service: "com.makeuc.airsign.sandbox"))
+        }
+        #endif
+        return ProfileStore(directory: ProfileStore.defaultDirectory, secrets: KeychainSecretStore())
+    }()
     private let motion = HeadphoneMotionSource()
     private var recorder = SignatureRecorder()
     private var signingSamples: [MotionSample] = []
+    #if AIRSIGN_LAB
     private var enrolledRows: [[MotionSample]] = []
+    private var returnToLabAfterEnroll = false
+    #endif
     /// A first enrollment waits here until the user confirms the recovery code, so quitting early saves nothing.
     private var pendingProfile: Profile?
     private var identityPurpose = IdentityPurpose.changeSignature
-    private var returnToLabAfterEnroll = false
     private var timer: Timer?
 
     private enum IdentityPurpose {
-        case changeSignature, changeSignatureFromLab, openLab, enableDemo
+        case changeSignature, enableDemo
+        #if AIRSIGN_LAB
+        case changeSignatureFromLab, openLab
+        #endif
 
         /// One lucky imitation must not be enough to replace the owner's signature.
-        var needsRecoveryCode: Bool { self == .changeSignature || self == .changeSignatureFromLab }
+        var needsRecoveryCode: Bool {
+            #if AIRSIGN_LAB
+            return self == .changeSignature || self == .changeSignatureFromLab
+            #else
+            return self == .changeSignature
+            #endif
+        }
     }
 
     /// True while the identity screen accepts only the recovery code.
     @Published private(set) var identityNeedsCode = false
 
-    var demoMode: Bool { profile?.demoMode ?? true }
+    var demoMode: Bool { profile?.demoMode ?? false }
 
     private var restingScreen: Screen {
         if blockReason != nil { return .blocked }
@@ -215,6 +237,7 @@ final class AppModel: ObservableObject {
             say("Changing the signature needs the recovery code: use “Use recovery code…”.", .warn)
             return
         }
+        #if AIRSIGN_LAB
         if screen == .lab, testTester.trimmingCharacters(in: .whitespaces).isEmpty {
             say("Type the tester's name first.", .warn)
             return
@@ -223,6 +246,7 @@ final class AppModel: ObservableObject {
             say("Type the owner's name first.", .warn)
             return
         }
+        #endif
         guard case .streaming = motionStatus else {
             say("No AirPod data. Pinch the AirPod so a finger covers its sensor, and keep the other one in the case.", .bad)
             return
@@ -286,7 +310,11 @@ final class AppModel: ObservableObject {
             }
         case .unlock: verifyAndUnlock(signature)
         case .confirmIdentity: confirmIdentity(signature)
+        #if AIRSIGN_LAB
         case .lab: labVerify(signature, rows: rows)
+        #else
+        case .lab: break
+        #endif
         case .home, .blocked: break
         }
     }
@@ -307,7 +335,9 @@ final class AppModel: ObservableObject {
         }
         if enrolledSoFar.isEmpty { enrollStrength = nil }
         enrolledSoFar.append(signature)
+        #if AIRSIGN_LAB
         enrolledRows.append(rows)
+        #endif
         guard enrolledSoFar.count >= MatcherConfig.enrollCount else {
             say("Got \(enrolledSoFar.count) of \(MatcherConfig.enrollCount). Sign again the same way.", .good)
             return
@@ -318,7 +348,9 @@ final class AppModel: ObservableObject {
     private func finishEnrollment() {
         guard let deviceUID = AudioDeviceIdentity.headphoneUID() else {
             enrolledSoFar.removeLast()
+            #if AIRSIGN_LAB
             enrolledRows.removeLast()
+            #endif
             say("Set the sound output to your AirPods (Control Center → Sound), then sign once more.", .bad)
             return
         }
@@ -371,11 +403,17 @@ final class AppModel: ObservableObject {
                 updated.enrollment = enrollment
                 updated.lockout.recordSuccess()
                 try save(updated)
+                #if AIRSIGN_LAB
                 logEnrollment(enrollment)
+                #endif
                 isReenrolling = false
                 clearEnrollment()
+                #if AIRSIGN_LAB
                 screen = returnToLabAfterEnroll ? .lab : .home
                 returnToLabAfterEnroll = false
+                #else
+                screen = .home
+                #endif
                 say("New signature saved. Your locked files open with it.", .good)
                 return
             }
@@ -408,7 +446,9 @@ final class AppModel: ObservableObject {
             say("Could not save the signature: \(error.localizedDescription). Enroll again.", .bad)
             return
         }
+        #if AIRSIGN_LAB
         logEnrollment(pending.enrollment)
+        #endif
         clearEnrollment()
         screen = pendingUnlock.isEmpty ? .home : .unlock
         say(pendingUnlock.isEmpty ? "Right-click any file in Finder → Lock with AirSign." : "Now sign to unlock.", .neutral)
@@ -424,7 +464,9 @@ final class AppModel: ObservableObject {
 
     private func clearEnrollment() {
         enrolledSoFar = []
+        #if AIRSIGN_LAB
         enrolledRows = []
+        #endif
         pendingEnrollment = nil
         confirmations = 0
     }
@@ -573,7 +615,9 @@ final class AppModel: ObservableObject {
         identityNeedsCode = false
         isReenrolling = false
         isResetting = false
+        #if AIRSIGN_LAB
         returnToLabAfterEnroll = false
+        #endif
         clearEnrollment()
         pendingProfile = nil
         recoveryCodeToShow = nil
@@ -631,10 +675,12 @@ final class AppModel: ObservableObject {
         beginIdentityCheck(.changeSignature, prompt: "Changing your signature needs your recovery code: press “Use recovery code…”.")
     }
 
+    #if AIRSIGN_LAB
     func beginLab() {
         guard testMode else { return }
         beginIdentityCheck(.openLab, prompt: "The owner opens the test lab: sign once, or use the recovery code.")
     }
+    #endif
 
     private func beginIdentityCheck(_ purpose: IdentityPurpose, prompt: String) {
         stopCapture()
@@ -670,14 +716,20 @@ final class AppModel: ObservableObject {
         identityNeedsCode = false
         switch identityPurpose {
         case .changeSignature:
-            startReenrollment(returningToLab: false)
+            #if AIRSIGN_LAB
+            returnToLabAfterEnroll = false
+            #endif
+            startReenrollment()
+        #if AIRSIGN_LAB
         case .changeSignatureFromLab:
-            startReenrollment(returningToLab: true)
+            returnToLabAfterEnroll = true
+            startReenrollment()
         case .openLab:
             lastVerdict = nil
             livePath = []
             screen = .lab
             say("Test lab open. Pick the tester and scenario, then press Space.", .good)
+        #endif
         case .enableDemo:
             if var current = profile {
                 current.demoMode = true
@@ -690,9 +742,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func startReenrollment(returningToLab: Bool) {
+    private func startReenrollment() {
         isReenrolling = true
-        returnToLabAfterEnroll = returningToLab
         clearEnrollment()
         livePath = []
         lastVerdict = nil
@@ -700,6 +751,7 @@ final class AppModel: ObservableObject {
         say("Now sign your new signature 3 times.", .neutral)
     }
 
+    #if AIRSIGN_LAB
     // MARK: - Test lab (only with --test-mode)
 
     /// The owner re-enrolls from inside the lab so the templates' raw motion is logged too.
@@ -765,6 +817,7 @@ final class AppModel: ObservableObject {
     private func labKey(_ scenario: TestScenario) -> String {
         "\(testSession.rawValue)|\(testTester.trimmingCharacters(in: .whitespaces))|\(scenario.rawValue)"
     }
+    #endif
 
     // MARK: - Settings
 
