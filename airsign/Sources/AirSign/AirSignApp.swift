@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var services: ServicesProvider?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Scratch.sweepTemporaryFolders()
         if CommandLine.arguments.contains("--selftest-keychain") {
             runKeychainSelfTest()
         }

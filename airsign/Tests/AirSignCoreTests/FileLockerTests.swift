@@ -16,16 +16,81 @@ private struct Fixture {
 
     var pub: Curve25519.KeyAgreement.PublicKey { try! RecoveryCode.privateKey(for: code).publicKey }
 
-    var locker: FileLocker {
+    var trash: (URL) throws -> Void {
         let trash = trashDir
-        return FileLocker(trash: { try FileManager.default.moveItem(at: $0, to: trash.appendingPathComponent($0.lastPathComponent)) })
+        return { try FileManager.default.moveItem(at: $0, to: trash.appendingPathComponent($0.lastPathComponent)) }
     }
+
+    var locker: FileLocker { FileLocker(trash: trash) }
 
     func file(_ name: String, _ text: String) -> URL {
         let url = dir.appendingPathComponent(name)
         try! Data(text.utf8).write(to: url)
         return url
     }
+}
+
+private func partials(in dir: URL) -> [String] {
+    ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0.hasPrefix(".airsign-partial-") }
+}
+private struct Stop: Error {}
+
+@Test func restoredFileAppearsUnderItsNameOnlyWhenComplete() throws {
+    let f = Fixture(), fm = FileManager.default
+    let locked = try f.locker.lock(f.file("a.txt", "alpha"), masterKey: f.master, recoveryPublicKey: f.pub)
+    var seen = 0
+    let locker = FileLocker(trash: f.trash, willPublish: { source, target in
+        seen += 1
+        #expect(source.path.contains("/.airsign-partial-"))
+        #expect(source.deletingLastPathComponent().path == target.deletingLastPathComponent().path)
+        #expect((try? String(contentsOf: source, encoding: .utf8)) == "alpha")
+        #expect(!fm.fileExists(atPath: target.path))
+    })
+    let restored = try locker.unlock(locked) { try LockedFile.open($0, masterKey: f.master) }
+    #expect(seen == 1 && restored.lastPathComponent == "a.txt")
+    #expect(try String(contentsOf: restored, encoding: .utf8) == "alpha")
+    #expect(partials(in: f.dir).isEmpty)
+}
+
+@Test func aRestoreThatFailsBeforePublishingLeavesNothingBehind() throws {
+    let f = Fixture(), fm = FileManager.default
+    let lockedFile = try f.locker.lock(f.file("a.txt", "alpha"), masterKey: f.master, recoveryPublicKey: f.pub)
+    let folder = f.dir.appendingPathComponent("Docs")
+    try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+    try Data("beta".utf8).write(to: folder.appendingPathComponent("b.txt"))
+    let lockedFolder = try f.locker.lock(folder, masterKey: f.master, recoveryPublicKey: f.pub)
+    let locker = FileLocker(trash: f.trash, willPublish: { _, _ in throw Stop() })
+    for locked in [lockedFile, lockedFolder] {
+        #expect(throws: (any Error).self) { try locker.unlock(locked) { try LockedFile.open($0, masterKey: f.master) } }
+        #expect(fm.fileExists(atPath: locked.path))
+    }
+    #expect(partials(in: f.dir).isEmpty)
+    #expect(!fm.fileExists(atPath: f.dir.appendingPathComponent("a.txt").path))
+    #expect(!fm.fileExists(atPath: folder.path))
+}
+
+@Test func unlockRemovesLeftoverPartialsFromAnEarlierCrash() throws {
+    let f = Fixture(), fm = FileManager.default
+    let staleFile = f.dir.appendingPathComponent(".airsign-partial-\(UUID().uuidString)")
+    let staleDir = f.dir.appendingPathComponent(".airsign-partial-\(UUID().uuidString)")
+    try Data("half".utf8).write(to: staleFile)
+    try fm.createDirectory(at: staleDir.appendingPathComponent("out"), withIntermediateDirectories: true)
+    let keep = [".airsign-partial-notes", ".hidden"]
+    for name in keep { try Data().write(to: f.dir.appendingPathComponent(name)) }
+    let locked = try f.locker.lock(f.file("a.txt", "alpha"), masterKey: f.master, recoveryPublicKey: f.pub)
+    _ = try f.locker.unlock(locked) { try LockedFile.open($0, masterKey: f.master) }
+    #expect(!fm.fileExists(atPath: staleFile.path) && !fm.fileExists(atPath: staleDir.path))
+    for name in keep { #expect(fm.fileExists(atPath: f.dir.appendingPathComponent(name).path)) }
+}
+
+@Test func unlockIntoAReadOnlyFolderFailsCleanly() throws {
+    let f = Fixture(), fm = FileManager.default
+    let locked = try f.locker.lock(f.file("a.txt", "alpha"), masterKey: f.master, recoveryPublicKey: f.pub)
+    let before = try fm.contentsOfDirectory(atPath: f.dir.path).sorted()
+    try fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: f.dir.path)
+    defer { try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: f.dir.path) }
+    #expect(throws: FileLockerError.self) { try f.locker.unlock(locked) { try LockedFile.open($0, masterKey: f.master) } }
+    #expect(try fm.contentsOfDirectory(atPath: f.dir.path).sorted() == before)
 }
 
 @Test func lockThenUnlockRestoresBytesAndTrashesOriginal() throws {

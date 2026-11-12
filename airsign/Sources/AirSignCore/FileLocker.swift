@@ -17,9 +17,15 @@ public struct FileLocker {
     public static let lockedExtension = "airsign"
 
     private let trash: (URL) throws -> Void
+    private let willPublish: (URL, URL) throws -> Void
 
     public init(trash: @escaping (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }) {
+        self.init(trash: trash, willPublish: { _, _ in })
+    }
+
+    init(trash: @escaping (URL) throws -> Void, willPublish: @escaping (_ source: URL, _ target: URL) throws -> Void) {
         self.trash = trash
+        self.willPublish = willPublish
     }
 
     public func lock(_ url: URL, masterKey: SymmetricKey, recoveryPublicKey: Curve25519.KeyAgreement.PublicKey) throws -> URL {
@@ -43,6 +49,7 @@ public struct FileLocker {
     }
 
     public func unlock(_ url: URL, open: (Data) throws -> (name: String, plaintext: Data)) throws -> URL {
+        Scratch.sweepPartials(in: url.deletingLastPathComponent())
         guard url.pathExtension.lowercased() == Self.lockedExtension else { throw FileLockerError.notLocked }
         let data: Data
         do {
@@ -56,9 +63,13 @@ public struct FileLocker {
         let target = uniqueRestoreURL(in: url.deletingLastPathComponent(), name: Self.safeName(opened.name), isFolder: isFolder)
         do {
             if isFolder {
-                try FolderArchive.unzip(opened.plaintext, to: target)
+                try FolderArchive.unzip(opened.plaintext, to: target, willPublish: willPublish)
             } else {
-                try opened.plaintext.write(to: target, options: .withoutOverwriting)
+                let partial = Scratch.partialURL(in: target.deletingLastPathComponent())
+                defer { try? FileManager.default.removeItem(at: partial) }
+                try opened.plaintext.write(to: partial, options: .withoutOverwriting)
+                try willPublish(partial, target)
+                try FileManager.default.moveItem(at: partial, to: target)
             }
         } catch {
             throw (error as? FileLockerError) ?? FileLockerError.writeFailed(error.localizedDescription)
