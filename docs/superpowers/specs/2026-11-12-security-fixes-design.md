@@ -17,7 +17,7 @@ Each goal is one of the six findings. "Now" is the behaviour on `main` at 5ca039
 **After.**
 
 - **Restoring is all-or-nothing.** The plaintext of a file or a folder is first written under a hidden name next to the locked file, `.airsign-partial-<UUID>`, and moved to its final name only when complete. A failed restore removes the partial. An existing file is still never overwritten. The item-replacement folder is no longer used.
-- **Leftovers are removed.** Scratch folders in the system temporary folder are named `airsign-scratch-<UUID>` and created 0700. When AirSign starts it removes any folder there whose name is exactly that prefix plus a UUID, and nothing else (the temporary folder can hold unrelated `airsign-…` items). When AirSign unlocks a file it first removes any `.airsign-partial-<UUID>` item in that file's folder.
+- **Leftovers are removed.** Scratch folders in the system temporary folder are named `airsign-scratch-<UUID>` and created 0700. When AirSign starts it removes leftover scratch folders from the system temporary folder, and when it unlocks a file it first removes leftover partials from that file's folder. A leftover is removed only when AirSign made it and nothing is using it: the name is exactly the prefix plus a UUID, it is a folder holding AirSign's marker file, and the lock AirSign holds on that marker while it works is free. Anything else with such a name is left alone.
 - **What stays, documented in README and SECURITY.md:** locking moves the original to the Trash; if AirSign is killed in the middle of a restore, a hidden partial can remain next to the locked file until AirSign next unlocks something in that folder.
 
 ### 2. An unreadable profile or key never costs the master key
@@ -38,7 +38,7 @@ Each goal is one of the six findings. "Now" is the behaviour on `main` at 5ca039
 
 **After.**
 
-- A lockout records the boot session and the continuous uptime (which keeps counting during sleep) when it starts. **While the Mac has not restarted, uptime alone decides** when the cooldown ends; changing the clock in either direction has no effect. **After a restart the wall clock decides**, and the time left is never more than the cooldown's own length. Saved lockouts without the new fields still load and use the wall clock.
+- A lockout records the boot session and the continuous uptime (which keeps counting during sleep) when it starts. **While the Mac has not restarted, uptime alone decides** when the cooldown ends; changing the clock in either direction has no effect. **After a restart the wall clock decides the initial time left**, capped at the cooldown's own length. AirSign saves that time against the new boot, so uptime counts it down from then on. Saved lockouts without the new fields still load; the wall clock supplies their initial time left.
 - **A missing Keychain copy fails closed.** If `profile.bin` exists and the Keychain has no lockout item, AirSign treats that as tampering: it starts the longest cooldown (4 hours) and saves it. Every save writes that item, so it is only ever missing when something removed it.
 - **What stays, documented.** Someone who can use the Mac as the owner can copy and later restore everything AirSign stores (its folder and the Keychain file) and so roll the count back; a restart followed by a clock change also ends a cooldown. No local-only fix closes these. The README's row for "uses your unlocked Mac" and SECURITY.md say so: the lockout slows such a person, it does not stop a determined one.
 
@@ -59,7 +59,7 @@ Each goal is one of the six findings. "Now" is the behaviour on `main` at 5ca039
 
 **Now.** Pairing a second Mac stores the first Mac's recovery private key in the second Mac's Keychain, and the README does not say so.
 
-**After.** README and SECURITY.md say: what pairing stores and where; that a paired Mac can open everything the other Mac ever locked, after its own signature check; that anyone who can read the paired Mac's Keychain gets the equivalent of the other Mac's recovery code; and how to unpair ("Forget paired Macs"). README also gains a short "Pairing a second Mac" how-to, because the feature is otherwise undocumented. No change to how pairing works.
+**After.** README and SECURITY.md say: what pairing stores and where; that a paired Mac can open the files the other Mac locked under the recovery code used to pair, after its own signature check, and that a reset or a fresh enrollment on the other Mac needs a new pairing; that anyone who can read the paired Mac's Keychain gets the equivalent of the other Mac's recovery code; and how to unpair ("Forget paired Macs"). Changing a signature keeps its recovery code; keep old codes for files locked before a reset or fresh enrollment. README also gains a short "Pairing a second Mac" how-to, because the feature is otherwise undocumented. No change to how pairing works.
 
 ## Non-goals
 

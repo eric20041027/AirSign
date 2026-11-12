@@ -188,9 +188,85 @@ private func locked(at time: Date, boot: BootClock?) -> Lockout {
     let earlier = locked(at: t0, boot: bootA)
     let later = locked(at: t0.addingTimeInterval(60), boot: BootClock(session: "A", uptime: 1060))
     let now = BootClock(session: "A", uptime: 1070)
-    for merged in [Lockout.mostRestrictive(earlier, later), .mostRestrictive(later, earlier), .mostRestrictive(later, Lockout())] {
+    for merged in [Lockout.mostRestrictive(earlier, later, now: t0, boot: now),
+                   .mostRestrictive(later, earlier, now: t0, boot: now),
+                   .mostRestrictive(later, Lockout(), now: t0, boot: now)] {
         #expect(merged.remaining(now: t0, boot: now) == 290)
     }
+}
+
+@Test func mergingPicksTheCooldownWithMoreTimeLeftNotTheLaterWallDate() {
+    let stale = locked(at: t0, boot: bootA)                      // ends at t0 + 300, over by uptime 1300
+    let back = t0.addingTimeInterval(-86_400)                    // the clock is then set back a day
+    let active = locked(at: back, boot: BootClock(session: "A", uptime: 1400))
+    let now = BootClock(session: "A", uptime: 1410)
+    for merged in [Lockout.mostRestrictive(stale, active, now: back, boot: now),
+                   .mostRestrictive(active, stale, now: back, boot: now)] {
+        #expect(merged.remaining(now: back, boot: now) == 290)
+    }
+    let penalty = Lockout.tampered(now: back, boot: now)
+    #expect(Lockout.mostRestrictive(stale, penalty, now: back, boot: now).remaining(now: back, boot: now) == 14_400)
+    let neither = Lockout.mostRestrictive(stale, Lockout(), now: back, boot: now)
+    #expect(neither.lockedUntil == nil && neither.lockedFor == nil && neither.lockCount == 1)
+}
+
+@Test func puttingBackAStaleProfileCannotCancelAnActiveCooldown() throws {
+    let dir = tempDir()
+    let store = ProfileStore(directory: dir, secrets: InMemorySecretStore())
+    var p = try testProfile()
+    try store.createProfile(p)
+    p.lockout = locked(at: t0, boot: bootA)                      // ends at t0 + 300
+    try store.save(p)
+    let file = dir.appendingPathComponent("profile.bin")
+    let stale = try Data(contentsOf: file)
+    let back = t0.addingTimeInterval(-86_400)                    // the clock is set back a day, then a new lockout starts
+    p.lockout = locked(at: back, boot: BootClock(session: "A", uptime: 1400))
+    try store.save(p)
+    try stale.write(to: file)                                    // someone puts the old copy back
+    let now = BootClock(session: "A", uptime: 1410)
+    #expect(try store.load(now: back, boot: now)?.lockout.remaining(now: back, boot: now) == 290)
+}
+
+@Test func afterARestartTheCooldownCountsDownWithTheNewBootEvenIfTheClockIsBehind() {
+    let l = locked(at: t0, boot: bootA)
+    let back = t0.addingTimeInterval(-86_400)
+    let r = l.reanchored(now: back, boot: BootClock(session: "B", uptime: 5))
+    #expect(r.lockCount == l.lockCount && r.failures == l.failures)
+    #expect(r.remaining(now: back, boot: BootClock(session: "B", uptime: 5)) == 300)
+    #expect(r.remaining(now: back, boot: BootClock(session: "B", uptime: 105)) == 200)
+    #expect(r.remaining(now: back, boot: BootClock(session: "B", uptime: 306)) == nil)
+    #expect(l.reanchored(now: t0, boot: bootA) == l)             // same boot: unchanged
+    #expect(l.reanchored(now: t0, boot: nil) == l)               // no boot clock: unchanged
+    #expect(l.reanchored(now: t0.addingTimeInterval(301), boot: BootClock(session: "B", uptime: 5)).lockedUntil == nil)
+}
+
+@Test func loadReanchorsALockoutOnceAfterARestart() throws {
+    let store = ProfileStore(directory: tempDir(), secrets: InMemorySecretStore())
+    var p = try testProfile()
+    try store.createProfile(p)
+    p.lockout = locked(at: t0, boot: bootA)
+    try store.save(p)
+    let back = t0.addingTimeInterval(-86_400)
+    #expect(try store.load(now: back, boot: BootClock(session: "B", uptime: 5))?.lockout
+        .remaining(now: back, boot: BootClock(session: "B", uptime: 5)) == 300)
+    #expect(try store.load(now: back, boot: BootClock(session: "B", uptime: 105))?.lockout
+        .remaining(now: back, boot: BootClock(session: "B", uptime: 105)) == 200)
+}
+
+@Test func launchStateReanchorsALockoutOnceAfterARestart() throws {
+    let store = ProfileStore(directory: tempDir(), secrets: InMemorySecretStore())
+    var p = try testProfile()
+    try store.createProfile(p)
+    p.lockout = locked(at: t0, boot: bootA)
+    try store.save(p)
+    let back = t0.addingTimeInterval(-86_400)
+    guard case .ready(let first) = store.launchState(now: back, boot: BootClock(session: "B", uptime: 5)),
+          case .ready(let later) = store.launchState(now: back, boot: BootClock(session: "B", uptime: 105)) else {
+        Issue.record("a restart must leave the profile ready")
+        return
+    }
+    #expect(first.lockout.remaining(now: back, boot: BootClock(session: "B", uptime: 5)) == 300)
+    #expect(later.lockout.remaining(now: back, boot: BootClock(session: "B", uptime: 105)) == 200)
 }
 
 @Test func aTamperedLockoutIsTheLongestCooldown() {

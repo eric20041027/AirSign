@@ -67,9 +67,14 @@ struct RecoveryCodeView: View {
                 .padding(16)
                 .frame(maxWidth: .infinity)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .textBackgroundColor)))
-            Button("I wrote it down") { model.confirmRecoveryCodeWritten() }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+            HStack {
+                Button("I wrote it down") { model.confirmRecoveryCodeWritten() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                if model.isResetting {
+                    Button("Cancel") { model.cancelToHome() }
+                }
+            }
         }
     }
 }

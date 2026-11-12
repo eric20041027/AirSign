@@ -66,8 +66,12 @@ public struct ProfileStore {
         guard try profileExists() else { return nil }
         let profileKey = try key(Self.profileKeyName)
         let lockoutData = try secrets.load(Self.lockoutName)
-        let profile = try readProfile(using: profileKey, lockoutData: lockoutData, now: now, boot: boot)
-        if lockoutData == nil { try save(profile) }
+        var profile = try readProfile(using: profileKey, lockoutData: lockoutData, now: now, boot: boot)
+        let reanchored = profile.lockout.reanchored(now: now, boot: boot)
+        if lockoutData == nil || reanchored != profile.lockout {
+            profile.lockout = reanchored
+            try save(profile)
+        }
         return profile
     }
 
@@ -86,14 +90,16 @@ public struct ProfileStore {
             return .blocked(.storeError)
         }
         guard let profileKey, masterKey != nil else { return .blocked(.keyMissing) }
-        let profile: Profile
+        var profile: Profile
         do {
             profile = try readProfile(using: SymmetricKey(data: profileKey), lockoutData: lockoutData,
                                       now: now, boot: boot)
         } catch {
             return .blocked(.profileUnreadable)
         }
-        if lockoutData == nil {
+        let reanchored = profile.lockout.reanchored(now: now, boot: boot)
+        if lockoutData == nil || reanchored != profile.lockout {
+            profile.lockout = reanchored
             do { try save(profile) }
             catch { return .blocked(.storeError) }
         }
@@ -120,9 +126,10 @@ public struct ProfileStore {
         // The Keychain keeps its own copy of the count, so restoring an old profile.bin can't reset it.
         if let lockoutData {
             let kept = try JSONDecoder().decode(Lockout.self, from: lockoutData)
-            profile.lockout = Lockout.mostRestrictive(profile.lockout, kept)
+            profile.lockout = Lockout.mostRestrictive(profile.lockout, kept, now: now, boot: boot)
         } else {
-            profile.lockout = Lockout.mostRestrictive(profile.lockout, .tampered(now: now, boot: boot))
+            profile.lockout = Lockout.mostRestrictive(profile.lockout, .tampered(now: now, boot: boot),
+                                                     now: now, boot: boot)
         }
         return profile
     }

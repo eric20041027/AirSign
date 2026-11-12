@@ -70,6 +70,24 @@ public struct Lockout: Codable, Equatable {
         return seconds > 0 ? seconds : nil
     }
 
+    /// After a restart, carry the capped time left onto the new boot so uptime counts it down.
+    public func reanchored(now: Date, boot: BootClock?) -> Lockout {
+        guard lockedUntil != nil, let boot, lockedBootSession != boot.session else { return self }
+        var anchored = self
+        if let r = remaining(now: now, boot: boot) {
+            anchored.lockedFor = r
+            anchored.lockedUntil = now.addingTimeInterval(r)
+            anchored.lockedBootSession = boot.session
+            anchored.lockedUptime = boot.uptime
+        } else {
+            anchored.lockedUntil = nil
+            anchored.lockedFor = nil
+            anchored.lockedBootSession = nil
+            anchored.lockedUptime = nil
+        }
+        return anchored
+    }
+
     /// The longest cooldown, started now, when a saved lockout is missing.
     public static func tampered(now: Date, boot: BootClock?) -> Lockout {
         var lockout = Lockout()
@@ -83,10 +101,12 @@ public struct Lockout: Codable, Equatable {
     }
 
     /// The stricter of two copies, so putting an older copy back never loosens anything.
-    public static func mostRestrictive(_ a: Lockout, _ b: Lockout) -> Lockout {
-        var merged = a
-        if let until = b.lockedUntil, a.lockedUntil.map({ until > $0 }) ?? true {
-            merged = b
+    public static func mostRestrictive(_ a: Lockout, _ b: Lockout, now: Date, boot: BootClock?) -> Lockout {
+        let aRemaining = a.remaining(now: now, boot: boot) ?? 0
+        let bRemaining = b.remaining(now: now, boot: boot) ?? 0
+        var merged = Lockout()
+        if aRemaining > 0 || bRemaining > 0 {
+            merged = aRemaining >= bRemaining ? a : b
         }
         merged.failures = max(a.failures, b.failures)
         merged.lockCount = max(a.lockCount, b.lockCount)

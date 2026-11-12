@@ -111,7 +111,6 @@ final class AppModel: ObservableObject {
 
     init() {
         retryLaunch()
-        pairedMacCount = (try? store.pairedRecoveryKeys().count) ?? 0
         motion.onSample = { [weak self] sample in MainActor.assumeIsolated { self?.handle(sample) } }
         motion.onStatus = { [weak self] status in MainActor.assumeIsolated { self?.motionStatus = status } }
         motion.start()
@@ -135,6 +134,7 @@ final class AppModel: ObservableObject {
         case .blocked(let reason):
             block(reason)
         }
+        pairedMacCount = (try? store.pairedRecoveryKeys().count) ?? 0
     }
 
     private func block(_ reason: BlockReason) {
@@ -423,6 +423,8 @@ final class AppModel: ObservableObject {
             pendingProfile = Profile(enrollment: enrollment, recoveryPublicKey: recoveryKey, lockout: Lockout(), demoMode: false)
             recoveryCodeToShow = code
             say("Write down your recovery code. Your signature is saved when you confirm.", .good)
+        } catch ProfileStoreError.keyMissing {
+            block(.keyMissing)
         } catch {
             clearEnrollment()
             say("Could not save the signature: \(error.localizedDescription). Start again.", .bad)
@@ -442,6 +444,10 @@ final class AppModel: ObservableObject {
         } catch {
             isResetting = false
             clearEnrollment()
+            if case ProfileStoreError.keyMissing = error {
+                block(.keyMissing)
+                return
+            }
             screen = restingScreen
             say("Could not save the signature: \(error.localizedDescription). Enroll again.", .bad)
             return
@@ -488,11 +494,11 @@ final class AppModel: ObservableObject {
         lastVerdict = verdict
         sampleCandidate = verdict.canBecomeSample ? signature : nil
         guard verdict.accepted else {
-            adjustLockout(.failure)
+            guard adjustLockout(.failure) else { return }
             say(current.demoMode ? Self.describe(verdict) : "Not recognized.", .bad)
             return
         }
-        adjustLockout(.success)
+        guard adjustLockout(.success) else { return }
         do {
             let master = try store.masterKey()
             let paired = try store.pairedRecoveryKeys()
@@ -527,23 +533,23 @@ final class AppModel: ObservableObject {
             return
         }
         guard (try? RecoveryCode.normalize(code)) != nil else {
-            adjustLockout(.failure)
+            guard adjustLockout(.failure) else { return }
             say("That is not a valid recovery code (32 characters).", .bad)
             return
         }
         if screen == .confirmIdentity {
             let key = try? RecoveryCode.privateKey(for: code).publicKey.rawRepresentation
             guard let key, key == profile?.recoveryPublicKey else {
-                adjustLockout(.failure)
+                guard adjustLockout(.failure) else { return }
                 say("Wrong recovery code.", .bad)
                 return
             }
-            adjustLockout(.success)
+            guard adjustLockout(.success) else { return }
             identityConfirmed()
             return
         }
         let outcome = unlockPending { try LockedFile.open($0, recoveryCode: code) }
-        adjustLockout(Lockout.recoveryEffect(restored: outcome.restored.count, wrongKey: outcome.wrongKey.count))
+        guard adjustLockout(Lockout.recoveryEffect(restored: outcome.restored.count, wrongKey: outcome.wrongKey.count)) else { return }
         var extra = outcome.wrongKey.map { "\($0.lastPathComponent): wrong recovery code." }
         if rememberOnThisMac, profile != nil, !outcome.restored.isEmpty {
             extra.append(pairThisMac(withCode: code))
@@ -569,7 +575,7 @@ final class AppModel: ObservableObject {
         guard var current = profile, let signature = sampleCandidate else { return }
         do {
             current.enrollment = try adding(signature, to: current.enrollment)
-            persist(current)
+            guard persist(current) else { return }
             sampleCandidate = nil
             let e = current.enrollment
             say("Added. AirSign now compares with \(e.templates.count) signatures (\(e.addedCount) added after unlocking); "
@@ -582,7 +588,7 @@ final class AppModel: ObservableObject {
     func removeAddedSamples() {
         guard var current = profile, current.enrollment.addedCount > 0 else { return }
         current.enrollment = removingAddedSamples(from: current.enrollment)
-        persist(current)
+        guard persist(current) else { return }
         say("Removed the added signatures; AirSign compares with your enrolled ones only.", .good)
     }
 
@@ -704,10 +710,10 @@ final class AppModel: ObservableObject {
         if verdict.rejection == .deviceUnknown {
             say(Self.describe(verdict), .warn)
         } else if verdict.accepted {
-            adjustLockout(.success)
+            guard adjustLockout(.success) else { return }
             identityConfirmed()
         } else {
-            adjustLockout(.failure)
+            guard adjustLockout(.failure) else { return }
             say(current.demoMode ? Self.describe(verdict) : "Not recognized.", .bad)
         }
     }
@@ -733,7 +739,7 @@ final class AppModel: ObservableObject {
         case .enableDemo:
             if var current = profile {
                 current.demoMode = true
-                persist(current)
+                guard persist(current) else { return }
             }
             lastVerdict = nil
             livePath = []
@@ -829,16 +835,16 @@ final class AppModel: ObservableObject {
             return
         }
         current.demoMode = false
-        persist(current)
+        guard persist(current) else { return }
         thresholdOverride = nil
     }
 
     // MARK: - Helpers
 
-    private func adjustLockout(_ effect: Lockout.Effect) {
-        guard var current = profile else { return }
+    private func adjustLockout(_ effect: Lockout.Effect) -> Bool {
+        guard var current = profile else { return true }
         current.lockout.apply(effect, now: Date(), boot: BootClock.current())
-        persist(current)
+        return persist(current)
     }
 
     private func save(_ updated: Profile) throws {
@@ -847,16 +853,20 @@ final class AppModel: ObservableObject {
     }
 
     /// Updates memory first so a failed write can't erase a failure count, then blocks attempts until saving works.
-    private func persist(_ updated: Profile) {
+    private func persist(_ updated: Profile) -> Bool {
         profile = updated
         do {
             try store.save(updated)
             saveBlocked = false
+            return true
+        } catch ProfileStoreError.keyMissing {
+            block(.keyMissing)
         } catch {
             saveBlocked = true
             NSLog("AirSign: could not save profile: %@", error.localizedDescription)
             say("Could not save AirSign settings, so unlocking is paused: \(error.localizedDescription)", .bad)
         }
+        return false
     }
 
     private func say(_ text: String, _ newTone: Tone) {

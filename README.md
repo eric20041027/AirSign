@@ -147,7 +147,7 @@ If the Finder items don't appear, enable them in System Settings → Keyboard �
 2. Copy one file locked on the first Mac to the second Mac. Right-click it → **Unlock with AirSign**, then click **Use recovery code…**.
 3. Enter the first Mac's recovery code, tick **Remember on this Mac** and click **Unlock**. From then on, the first Mac's files open on the second Mac with the second Mac's AirPods and signature.
 
-Pairing is one-way. It stores the first Mac's recovery key in the second Mac's login Keychain, in the `paired-recovery-keys` item. The second Mac can then open everything the first Mac ever locked.
+Pairing is one-way. It stores the first Mac's recovery key in the second Mac's login Keychain, in the `paired-recovery-keys` item. The second Mac can then open the files the first Mac locked under the recovery code used to pair. That code stays the same when you change the first Mac's signature. Resetting AirSign on that Mac or enrolling from scratch replaces the code, so pair again with the new code and keep the old code for files locked before.
 
 On the second Mac, Settings → **Forget paired Macs** removes the stored keys. Saving a new enrollment from scratch or after a reset also forgets pairings.
 
@@ -189,7 +189,7 @@ A restart followed by a clock change also ends a cooldown. If AirSign is force-q
 
 ## Under the hood
 
-- **Swift + SwiftUI** app with Finder Services menu items; core logic in a tested `AirSignCore` library (85 unit tests).
+- **Swift + SwiftUI** app with Finder Services menu items; core logic in a tested `AirSignCore` library (97 unit tests).
 - **CoreMotion** `CMHeadphoneMotionManager` streams the AirPod's attitude, rotation rate, acceleration and gravity (we measured 50 Hz on AirPods Pro 3 and 25 Hz on AirPods 4).
 - **Matcher:** 9 features per sample, banded DTW (25% band), a duration penalty, the minimum distance to the enrolled templates.
 - **CryptoKit** for AES-GCM and HPKE; the **Keychain** for the master key and a copy of the lockout counter.
