@@ -163,7 +163,7 @@ class ProtocolV2Tests(unittest.TestCase):
         for c in self.data.cases:
             keys.setdefault(c.rec.owner, set()).add(c.key)
             self.assertEqual(c.templates[0].session, E.S1)
-        self.assertEqual({o: len(k) for o, k in keys.items()}, {"Eric": 1, "B": 1})
+        self.assertEqual({o: len(k) for o, k in keys.items()}, {"A": 1, "B": 1})
         self.assertEqual(self.data.dropped_device_unknown, 2)
         self.assertEqual(self.data.reenrolled_after_s1, 0)
         self.assertEqual({c.rec.session for c in self.data.cases}, {E.S1, E.S2, E.S3})

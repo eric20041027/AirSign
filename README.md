@@ -15,6 +15,7 @@
   <img alt="Swift" src="https://img.shields.io/badge/Swift-SwiftUI-1a5cff?logo=swift&logoColor=white">
   <img alt="No network code" src="https://img.shields.io/badge/network-none-111214">
   <img alt="MakeUC 2026" src="https://img.shields.io/badge/MakeUC%202026-Security%20track-1a5cff">
+  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-111214">
 </p>
 
 <p align="center">
@@ -23,7 +24,7 @@
   <a href="#install">Install</a> ·
   <a href="#security-model">Security model</a> ·
   <a href="#roadmap">Roadmap</a> ·
-  <a href="docs/technical-guide-zh.md">中文技術文件</a>
+  <a href="archive/makeuc-2026/technical-guide-zh.md">中文技術文件</a>
 </p>
 
 ---
@@ -83,7 +84,7 @@ The score is a banded dynamic-time-warping distance to your three enrolled signa
 
 ## What we measured
 
-We built a logged test lab into the app and ran it on two Macs during the event: the owner signing; teammates signing their own names on the owner's AirPods; imitating after watching once; and imitating after practising with a video. Protocol (in Chinese): [docs/test-protocol.md](docs/test-protocol.md). Session records: [docs/test-sessions.md](docs/test-sessions.md).
+We built a logged test lab into the app and ran it on two Macs during the event: the owner signing; teammates signing their own names on the owner's AirPods; imitating after watching once; and imitating after practising with a video. Protocol (in Chinese): [archive/makeuc-2026/test-protocol.md](archive/makeuc-2026/test-protocol.md). Session records: [archive/makeuc-2026/test-sessions.md](archive/makeuc-2026/test-sessions.md).
 
 **First session, both Macs**
 
@@ -100,10 +101,10 @@ We built a logged test lab into the app and ran it on two Macs during the event:
 **What surprised us: signatures drift.** Same owner, same enrollment, same Mac, about 2 and 2.5 hours later: 18/25, then 19/40 (42 logged; two rejected false starts of 0.8 s and 1.9 s left out). A long, complex signature (5.4 s, 117 changes of direction) slowly moved away from its enrollment: 5 of those 40 later tries scored worse than the closest imitator, so no threshold alone can fix it.
 
 - The strength meter and the three-signature check fix other problems we found (very short signatures, and an unsteady first enrollment on Mac 2). They don't fix drift: the drifting signature rated Strong and passed 20/20 right after enrolling.
-- A threshold factor of 1.35, chosen after the second sitting and fixed before the later ones, would have let the owner in 34/40 times instead of 19/40 and still rejected all 111 first-session imitator attempts, narrowly. In the final session it would have let 2 of 50 imitations of the new signature through (both Leo's), so the app keeps 1.25.
+- A threshold factor of 1.35, chosen after the second sitting and fixed before the later ones, would have let the owner in 34/40 times instead of 19/40 and still rejected all 111 first-session imitator attempts, narrowly. In the final session it would have let 2 of 50 imitations of the new signature through (both Tester B's), so the app keeps 1.25.
 - Adding a verified signature from each later sitting to the enrollment kept more owner tries in an offline replay (36/39 instead of 28/39). That is optimistic, since it reuses those sittings; the app now offers it after strong unlocks.
 
-**After a night's sleep** the owner switched to a simpler signature (1.7 s, strength Fair): 20/20 the next morning (similarity 76–81%), and two imitators who watched it got in 0/50: Leo 0/10, coming as close as 74% against the 75% pass mark, and Johnny 0/40, never above 62%. Simpler signatures are steadier and easier to copy; the strength meter is there to keep that balance.
+**After a night's sleep** the owner switched to a simpler signature (1.7 s, strength Fair): 20/20 the next morning (similarity 76–81%), and two imitators who watched it got in 0/50: Tester B 0/10, coming as close as 74% against the 75% pass mark, and Tester C 0/40, never above 62%. Simpler signatures are steadier and easier to copy; the strength meter is there to keep that balance.
 
 **Caveats we want you to know**
 
@@ -123,6 +124,8 @@ swift test               # the core: matcher, crypto, file locking, lockout
 scripts/install.sh       # builds, signs, installs to ~/Applications, registers the Finder items
 ```
 
+No Apple Development certificate? Run `AIRSIGN_ADHOC=1 scripts/install.sh` instead; macOS may then ask for your password after each rebuild.
+
 If the Finder items don't appear, enable them in System Settings → Keyboard → Keyboard Shortcuts → Services → Files and Folders.
 
 ## Quick start
@@ -136,6 +139,25 @@ If the Finder items don't appear, enable them in System Settings → Keyboard �
 <p align="center">
   <img alt="Left: the black sensor on an AirPod Pro, circled. Right: an AirPod held like a pen, with the bottom of the stem as the pen tip." src="docs/images/hold-airpod.jpg" width="720">
 </p>
+
+## Uninstall
+
+Deleting AirSign's Keychain items removes the master key, so existing `.airsign` files will then open only with your recovery code. Unlock anything you want to keep first. Then quit AirSign and run these from the root of your clone:
+
+```bash
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+"$LSREGISTER" -u ~/Applications/AirSign.app
+"$LSREGISTER" -u airsign/build/AirSign.app
+rm -rf ~/Applications/AirSign.app airsign/build "$HOME/Library/Application Support/AirSign"
+defaults delete com.makeuc.airsign
+for account in profile-key master-key paired-recovery-keys lockout selftest; do
+  security delete-generic-password -s com.makeuc.airsign -a "$account" >/dev/null
+done
+/System/Library/CoreServices/pbs -update   # refreshes the Finder right-click items
+security find-generic-password -s com.makeuc.airsign   # should report that the item could not be found
+```
+
+Errors saying an item or domain doesn't exist are fine: not every install creates all of them.
 
 ## Security model
 
@@ -171,10 +193,21 @@ If the Finder items don't appear, enable them in System Settings → Keyboard �
 | Path | What's there |
 |---|---|
 | [`airsign/`](airsign/) | The Swift package: `AirSignCore` (matcher, crypto, file locking, lockout) and the `AirSign` app |
-| [`docs/`](docs/) | Design and threat model, test protocol and sessions, brand files |
+| [`docs/`](docs/) | Brand files, images and development plans |
+| [`archive/makeuc-2026/`](archive/makeuc-2026/) | Hackathon records: test protocol and sessions, tuning, Devpost text, demo script, team plan (some in Chinese) |
 | [`tools/`](tools/) | Python ports of the matcher for tuning and the algorithm comparison |
 | [`spikes/airpods-motion/`](spikes/airpods-motion/) | The first prototype that proved the AirPods signal |
+
+## Contributing
+
+Bug reports, fixes and tests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Report security problems privately as described in [SECURITY.md](SECURITY.md), and follow the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Team
 
 Three students at MakeUC 2026: core and integration, Finder integration and second-Mac testing, tuning, write-up and video. We wrote a design and a task-by-task plan first, then built the core test-first, with Claude Code and Antigravity as coding assistants. Logo and font credits: [CREDITS.md](CREDITS.md).
+
+The name is shared with earlier, unrelated work: Shao, Yang, Wang and Ma's "AirSign: Smartphone Authentication by Signing in the Air" (*Sensors* 21(1):104, 2020, doi:10.3390/s21010104) verifies signatures drawn in the air with a smartphone.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Brand files are included; see [CREDITS.md](CREDITS.md) for the fonts.

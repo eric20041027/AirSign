@@ -8,7 +8,7 @@ import Testing
     let rows = strokes(ownerShape, n: 60, noise: 0.1)
     let e = try enroll((0..<3).map { _ in Signature(samples: strokes(ownerShape, noise: 0.2)) }, deviceUID: "UID-A")
     let verdict = verify(Signature(samples: rows), deviceUID: "UID-A", against: e)
-    let labels = AttemptLabels(tester: "Leo", scenario: "A4-skilled", session: "S1", owner: "Eric")
+    let labels = AttemptLabels(tester: "B", scenario: "A4-skilled", session: "S1", owner: "A")
 
     let url = try log.write(mode: .verify, labels: labels, samples: rows, verdict: verdict)
 
@@ -16,8 +16,8 @@ import Testing
     let json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
     #expect(json["mode"] as? String == "verify")
     #expect(json["who"] as? String == "forgery")
-    #expect(json["tester"] as? String == "Leo" && json["scenario"] as? String == "A4-skilled")
-    #expect(json["session"] as? String == "S1" && json["owner"] as? String == "Eric")
+    #expect(json["tester"] as? String == "B" && json["scenario"] as? String == "A4-skilled")
+    #expect(json["session"] as? String == "S1" && json["owner"] as? String == "A")
     #expect(json["loc"] as? String == "right")
     #expect((json["rows"] as? [[Double]])?.count == 60)
     #expect((json["rows"] as? [[Double]])?.first?.count == 14)
@@ -43,7 +43,7 @@ import Testing
     #expect(e.fingerprint != other.fingerprint)
 
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    var labels = AttemptLabels(tester: "Eric", scenario: AttemptLabels.ownerScenario, session: "S1", owner: "Eric")
+    var labels = AttemptLabels(tester: "A", scenario: AttemptLabels.ownerScenario, session: "S1", owner: "A")
     labels.enrollment = e.fingerprint
     let url = try AttemptLog(directory: dir).write(mode: .enroll, labels: labels, samples: strokes(ownerShape, n: 30), verdict: nil)
     let json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
@@ -53,7 +53,7 @@ import Testing
 @Test func ownerScenarioIsGenuineAndEnrollmentsHaveNoVerdict() throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let log = AttemptLog(directory: dir)
-    let labels = AttemptLabels(tester: "Eric", scenario: AttemptLabels.ownerScenario, session: "S1", owner: "Eric")
+    let labels = AttemptLabels(tester: "A", scenario: AttemptLabels.ownerScenario, session: "S1", owner: "A")
     let url = try log.write(mode: .enroll, labels: labels, samples: strokes(ownerShape, n: 30), verdict: nil)
     let json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
     #expect(json["mode"] as? String == "enroll" && json["who"] as? String == "genuine")

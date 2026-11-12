@@ -1,0 +1,38 @@
+# Contributing to AirSign
+
+Thanks for helping. Bug reports, fixes, tests and documentation are all welcome. For anything security-related, follow [SECURITY.md](SECURITY.md) instead of opening an issue. Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).
+
+## What you need
+
+- A Mac with Apple silicon and macOS 14 or later
+- Xcode 16 or later (Swift 6 toolchain)
+- AirPods with head tracking, only to run the app; `swift test` doesn't need them
+
+## Build and test
+
+```bash
+cd airsign
+swift test                         # the core: matcher, crypto, file locking, lockout
+scripts/install.sh                 # builds, signs, installs to ~/Applications, registers the Finder items
+AIRSIGN_ADHOC=1 scripts/install.sh # without an Apple Development certificate
+```
+
+With ad-hoc signing (`AIRSIGN_ADHOC=1`), macOS may ask for your password after each rebuild before AirSign can read its Keychain items. An Apple Development certificate avoids that: Xcode → Settings → Accounts → Manage Certificates → + → Apple Development.
+
+## Where things are
+
+| Path | What it is |
+|---|---|
+| `airsign/Sources/AirSignCore` | Pure logic with no UI: matcher, crypto, file format, lockout. Tested with Swift Testing in `airsign/Tests/AirSignCoreTests` |
+| `airsign/Sources/AirSign` | The SwiftUI app: motion input, AirPods identity, Keychain, Finder Services, views |
+| `tools/tuning` | Python port of the matcher for research. Tests: `cd tools/tuning && python3 -m unittest` (needs numpy) |
+| `archive/makeuc-2026` | Hackathon records; not maintained |
+
+## Rules for changes
+
+- Write the test first for any change to `AirSignCore`, and keep `swift test` passing.
+- One topic per pull request. Use conventional commit prefixes: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`.
+- Update the README when behaviour that users see changes.
+- Never commit signature recordings, test-lab logs, `profile.bin` or recovery codes. They are personal data or secrets.
+- Don't change these without a migration, or existing users lose access to their files: the `.airsign` magic `AIRSIGN1`, the HPKE info string `airsign-file-v1`, the HKDF salt in `RecoveryCode.swift`, the Keychain service `com.makeuc.airsign` and the bundle id `com.makeuc.airsign`.
+- Set your git email to your GitHub noreply address if you don't want your email in the history (GitHub → Settings → Emails).

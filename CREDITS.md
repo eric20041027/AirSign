@@ -7,3 +7,7 @@
 - Fonts in the wordmark, both under the SIL Open Font License 1.1, served by Google Fonts:
   - [Inter](https://fonts.google.com/specimen/Inter) by Rasmus Andersson (“Air”)
   - [Mr Dafoe](https://fonts.google.com/specimen/Mr+Dafoe) by Sudtipos (“Sign”)
+
+## Trademarks
+
+AirPods, Mac, macOS and Finder are trademarks of Apple Inc. AirSign is not affiliated with or endorsed by Apple.

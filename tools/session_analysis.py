@@ -1,6 +1,6 @@
 """Pre-registered analysis for the final test session (S3), written before S3 ran.
 
-Implements the rules fixed in docs/test-protocol.md:
+Implements the rules fixed in archive/makeuc-2026/test-protocol.md:
   * 1.25 vs 1.35: replay every owner and imitator attempt at the candidate factor 1.35. Adopt 1.35 only if no imitator
     attempt (S1, plus S3's screen-hidden A4) is accepted at 1.35; otherwise keep 1.25.
   * Cross-time enrollment: arm A = the 3 S1 enrollment records (worst pair); arm B = A + the first accepted S2 and the

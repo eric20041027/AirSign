@@ -1,6 +1,6 @@
 # AirSign: Devpost text
 
-Based on the text we submitted to Devpost for MakeUC 2026 (Security track), kept for reference and checked against our test records. The full numbers, caveats and test protocol are in the README's [What we measured](../README.md#what-we-measured) and in [test-sessions.md](test-sessions.md).
+Based on the text we submitted to Devpost for MakeUC 2026 (Security track), kept for reference and checked against our test records. The full numbers, caveats and test protocol are in the README's [What we measured](../../README.md#what-we-measured) and in [test-sessions.md](test-sessions.md).
 
 **Elevator pitch:** Lock any file or folder on your Mac by signing in the air while holding one AirPod. AES-GCM encryption, no password to leak, no fingerprint to give away, nothing leaves your Mac.
 

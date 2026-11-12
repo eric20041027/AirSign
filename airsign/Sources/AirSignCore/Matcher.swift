@@ -2,11 +2,11 @@ import Foundation
 
 public enum MatcherConfig {
     public static let durationWeight = 0.5
-    /// docs/tuning.md on the spike data: at 1.25 the owner passed 35/38 and imitators 1/23 across both rounds.
-    /// Tonight's test-lab data (docs/evaluation.md) decides the final value.
+    /// archive/makeuc-2026/tuning.md on the spike data: at 1.25 the owner passed 35/38 and imitators 1/23 across both rounds.
+    /// The test-lab sessions (archive/makeuc-2026/test-sessions.md) kept 1.25.
     public static let thresholdFactor = 1.25
-    /// Switch to 5 signatures with `.meanPair` only if the enroll5 result in docs/algorithm-comparison.md
-    /// passes the switch rule in docs/algorithm-bakeoff.md; tonight's tests ran on 3 with `.worstPair`.
+    /// Switch to 5 signatures with `.meanPair` only if the enroll5 result in archive/makeuc-2026/algorithm-comparison.md
+    /// passes the switch rule in archive/makeuc-2026/algorithm-bakeoff.md; the MakeUC tests ran on 3 with `.worstPair`.
     public static let enrollCount = 3
     public static let thresholdRule = ThresholdRule.worstPair
     /// Signatures right after enrolling that must all pass before the enrollment is kept.

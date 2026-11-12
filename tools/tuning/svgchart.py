@@ -1,4 +1,4 @@
-"""Two small static SVG charts for docs/evaluation.md, standard library only.
+"""Two small static SVG charts for archive/makeuc-2026/evaluation.md, standard library only.
 
 GitHub shows SVGs in markdown as images, so there is no hover layer: the
 markdown tables next to each chart are the table view. Colors are the first

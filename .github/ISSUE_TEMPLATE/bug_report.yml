@@ -1,0 +1,47 @@
+name: Bug report
+description: Something in AirSign doesn't work as described
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Found a security problem? Don't file it here: use the Security tab → Report a vulnerability.
+        Don't paste your recovery code, `profile.bin` or test-lab logs: they hold secrets or your signature's motion.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what AirSign did instead. Include any message it showed.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Right-click a folder → Lock with AirSign
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: macOS 15.1
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac model and chip
+      placeholder: MacBook Air M2
+  - type: input
+    id: airpods
+    attributes:
+      label: AirPods model
+      placeholder: AirPods Pro 3
+  - type: input
+    id: build
+    attributes:
+      label: AirSign commit or build
+      description: Output of `git rev-parse --short HEAD` in your clone.

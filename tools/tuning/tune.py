@@ -1,13 +1,13 @@
 """Grid-search the AirSign matcher settings on recorded attempts.
 
 Usage:
-  python tune.py DATA_DIR [--report ../../docs/tuning.md] [--quick]
+  python tune.py DATA_DIR [--report ../../archive/makeuc-2026/tuning.md] [--quick]
   python tune.py DATA_DIR \
       --round "Round 1" 20261107-143432-081,20261107-143437-789,20261107-143444-477 20261107-143445 20261107-144241 \
       --round "Round 2" 20261107-144527-280,20261107-144533-012,20261107-144616-034 20261107-144617 20261107-145000
-  python tune.py --test-logs C:/airsign-data/mac1 C:/airsign-data/mac2 --report ../../docs/evaluation.md
+  python tune.py --test-logs /path/to/airsign-data/mac1 /path/to/airsign-data/mac2 --report ../../archive/makeuc-2026/evaluation.md
 
---test-logs reads the app's test-mode records (docs/test-protocol.md) instead
+--test-logs reads the app's test-mode records (archive/makeuc-2026/test-protocol.md) instead
 and writes the evaluation report plus two SVG charts next to it; see evaluate.py.
 
 DATA_DIR holds the spike's attempt-*.json files. Keep it OUTSIDE the repo:
@@ -299,7 +299,7 @@ def main() -> None:
                     help="a named round: comma-separated template ids, first and last verify id (prefixes ok)")
     ap.add_argument("--min-dur", type=float, default=1.2, help="drop verify attempts not longer than this (s)")
     ap.add_argument("--owner-min", type=float, default=0.9, help="required owner acceptance rate in every round")
-    ap.add_argument("--report", type=Path, help="write the markdown report here (e.g. docs/tuning.md)")
+    ap.add_argument("--report", type=Path, help="write the markdown report here (e.g. archive/makeuc-2026/tuning.md)")
     ap.add_argument("--quick", action="store_true", help="small grid for a dry run")
     ap.add_argument("--note", default="", help="extra sentence about the data for the report")
     args = ap.parse_args()
