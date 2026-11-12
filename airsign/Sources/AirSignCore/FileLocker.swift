@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 
 public enum FileLockerError: Error, Equatable {
@@ -18,14 +19,17 @@ public struct FileLocker {
 
     private let trash: (URL) throws -> Void
     private let willPublish: (URL, URL) throws -> Void
+    private let willWriteLocked: (URL) throws -> Void
 
     public init(trash: @escaping (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }) {
         self.init(trash: trash, willPublish: { _, _ in })
     }
 
-    init(trash: @escaping (URL) throws -> Void, willPublish: @escaping (_ source: URL, _ target: URL) throws -> Void) {
+    init(trash: @escaping (URL) throws -> Void, willPublish: @escaping (_ source: URL, _ target: URL) throws -> Void,
+         willWriteLocked: @escaping (URL) throws -> Void = { _ in }) {
         self.trash = trash
         self.willPublish = willPublish
+        self.willWriteLocked = willWriteLocked
     }
 
     public func lock(_ url: URL, masterKey: SymmetricKey, recoveryPublicKey: Curve25519.KeyAgreement.PublicKey) throws -> URL {
@@ -34,15 +38,18 @@ public struct FileLocker {
         let sealed = try LockedFile.seal(plaintext, originalName: url.lastPathComponent, masterKey: masterKey,
                                          recoveryPublicKey: recoveryPublicKey, kind: isFolder ? LockedFileHeader.folderKind : nil)
         let target = uniqueLockedURL(for: url)
+        var createdOutput = false
         do {
+            try willWriteLocked(target)
             try sealed.write(to: target, options: .withoutOverwriting)
+            createdOutput = true
             let reopened = try LockedFile.open(Data(contentsOf: target), masterKey: masterKey)
             guard SHA256.hash(data: reopened.plaintext) == SHA256.hash(data: plaintext) else {
                 throw FileLockerError.writeFailed("the locked copy did not decrypt to the same bytes")
             }
             try trash(url)
         } catch {
-            try? FileManager.default.removeItem(at: target)
+            if createdOutput { try? FileManager.default.removeItem(at: target) }
             throw (error as? FileLockerError) ?? FileLockerError.writeFailed(error.localizedDescription)
         }
         return target
@@ -65,11 +72,12 @@ public struct FileLocker {
             if isFolder {
                 try FolderArchive.unzip(opened.plaintext, to: target, willPublish: willPublish)
             } else {
-                let partial = Scratch.partialURL(in: target.deletingLastPathComponent())
-                defer { try? FileManager.default.removeItem(at: partial) }
-                try opened.plaintext.write(to: partial, options: .withoutOverwriting)
-                try willPublish(partial, target)
-                try FileManager.default.moveItem(at: partial, to: target)
+                let partial = try ScratchFolder(in: target.deletingLastPathComponent(), prefix: Scratch.partialPrefix)
+                defer { partial.remove() }
+                let source = partial.url.appendingPathComponent("payload")
+                try opened.plaintext.write(to: source, options: .withoutOverwriting)
+                try willPublish(source, target)
+                try Self.publish(source, to: target)
             }
         } catch {
             throw (error as? FileLockerError) ?? FileLockerError.writeFailed(error.localizedDescription)
@@ -83,6 +91,17 @@ public struct FileLocker {
     }
 
     // MARK: - Private
+
+    static func publish(_ source: URL, to target: URL) throws {
+        guard renamex_np(source.path, target.path, UInt32(RENAME_EXCL)) != 0 else { return }
+        let failure = errno
+        // Some filesystems do not implement exclusive rename.
+        if failure == ENOTSUP {
+            try FileManager.default.moveItem(at: source, to: target)
+        } else {
+            throw FileLockerError.writeFailed(NSError(domain: NSPOSIXErrorDomain, code: Int(failure)).localizedDescription)
+        }
+    }
 
     private static func isFolder(_ url: URL) throws -> Bool {
         guard url.pathExtension.lowercased() != lockedExtension else { throw FileLockerError.alreadyLocked }
