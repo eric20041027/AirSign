@@ -35,6 +35,19 @@ private func partials(in dir: URL) -> [String] {
 }
 private struct Stop: Error {}
 
+@Test func aRestoredItemNamedLikeAPartialSurvivesTheNextUnlock() throws {
+    let f = Fixture()
+    let odd = ".airsign-partial-\(UUID().uuidString)"
+    #expect(FileLocker.safeName(odd) == String(odd.dropFirst()))
+    #expect(FileLocker.safeName(".airsign-partial-notes") == ".airsign-partial-notes")
+    let lockedOdd = try f.locker.lock(f.file(odd, "mine"), masterKey: f.master, recoveryPublicKey: f.pub)
+    let restoredOdd = try f.locker.unlock(lockedOdd) { try LockedFile.open($0, masterKey: f.master) }
+    #expect(restoredOdd.lastPathComponent == String(odd.dropFirst()))
+    let other = try f.locker.lock(f.file("a.txt", "alpha"), masterKey: f.master, recoveryPublicKey: f.pub)
+    _ = try f.locker.unlock(other) { try LockedFile.open($0, masterKey: f.master) }
+    #expect(try String(contentsOf: restoredOdd, encoding: .utf8) == "mine")
+}
+
 @Test func restoredFileAppearsUnderItsNameOnlyWhenComplete() throws {
     let f = Fixture(), fm = FileManager.default
     let locked = try f.locker.lock(f.file("a.txt", "alpha"), masterKey: f.master, recoveryPublicKey: f.pub)

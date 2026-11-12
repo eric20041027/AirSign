@@ -132,6 +132,7 @@ public struct FileLocker {
     /// The stored name comes from inside the file; never let it point outside the folder.
     static func safeName(_ stored: String) -> String {
         let last = (stored as NSString).lastPathComponent
+        if Scratch.isPartialName(last) { return String(last.dropFirst()) }
         return last.isEmpty || last == "." || last == ".." || last == "/" ? "unlocked-file" : last
     }
 }
