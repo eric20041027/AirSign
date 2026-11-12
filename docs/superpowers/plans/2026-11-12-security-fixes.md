@@ -22,7 +22,7 @@
 - English for all new text. Commit prefixes `fix:`, `test:`, `docs:`, `chore:`; no attribution lines.
 - Pushing, opening the PR and merging each need the maintainer's OK at that moment.
 - `AppModel.swift` is already 804 lines; this plan adds to it. Splitting it is sub-project C.
-- Inside a sandbox that already confines the process, SwiftPM needs `--disable-sandbox` (`swift build --disable-sandbox`, `swift test --disable-sandbox`).
+- Inside a sandbox that already confines the process (Codex `workspace-write`), SwiftPM needs `--disable-sandbox` and a module cache inside the workspace. Run this once per shell, then add `--disable-sandbox` to every `swift build` and `swift test`: `export CLANG_MODULE_CACHE_PATH="$PWD/.build/clang-module-cache" SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/clang-module-cache"` (from `airsign/`). Checked on 2026-11-12: 62 tests pass that way. `scripts/build-app.sh` does not pass the flag; in such a sandbox, run its checks outside it.
 
 ## Plan decisions beyond the spec
 
