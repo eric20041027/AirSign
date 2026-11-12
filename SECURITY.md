@@ -34,4 +34,4 @@ These are documented design limits, not vulnerabilities (see the README's [Secur
 - Locking moves the original to the Trash; it stays there in plaintext until you empty the Trash.
 - Someone who can use the Mac as the owner can roll the lockout back by copying and restoring AirSign's folder and the Keychain file. A restart followed by a clock change also ends a cooldown.
 - A force-quit during a restore can leave a hidden plaintext `.airsign-partial-…` item next to the locked file until AirSign next unlocks something in that folder.
-- A paired Mac stores the other Mac's recovery key in its login Keychain. Reading that Keychain is as good as having the other Mac's recovery code.
+- A paired Mac stores the other Mac's recovery key in its login Keychain. It can open everything the other Mac ever locked, after its own signature check. Reading that Keychain is as good as having the other Mac's recovery code. On the paired Mac, Settings → **Forget paired Macs** removes the stored keys.
