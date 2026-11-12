@@ -151,7 +151,7 @@ final class AppModel: ObservableObject {
             return
         }
         let countsTowardLockout = screen == .unlock || screen == .confirmIdentity
-        if countsTowardLockout, let remaining = profile?.lockout.remaining(now: Date()) {
+        if countsTowardLockout, let remaining = profile?.lockout.remaining(now: Date(), boot: BootClock.current()) {
             say("Too many tries. Wait \(Int(remaining.rounded(.up))) s.", .bad)
             return
         }
@@ -220,7 +220,7 @@ final class AppModel: ObservableObject {
 
     private func tick() {
         motion.refreshStaleness()
-        let remaining = profile?.lockout.remaining(now: Date())
+        let remaining = profile?.lockout.remaining(now: Date(), boot: BootClock.current())
         if remaining != lockoutRemaining { lockoutRemaining = remaining }
         guard isCapturing else { return }
         let age = motion.lastSampleDate.map { Date().timeIntervalSince($0) } ?? .infinity
@@ -420,7 +420,7 @@ final class AppModel: ObservableObject {
 
     /// `rememberOnThisMac` pairs this Mac with the one that locked the file, once the code has opened it.
     func submitRecoveryCode(_ code: String, rememberOnThisMac: Bool = false) {
-        if let remaining = profile?.lockout.remaining(now: Date()) {
+        if let remaining = profile?.lockout.remaining(now: Date(), boot: BootClock.current()) {
             say("Too many tries. Wait \(Int(remaining.rounded(.up))) s.", .bad)
             return
         }
@@ -721,7 +721,7 @@ final class AppModel: ObservableObject {
 
     private func adjustLockout(_ effect: Lockout.Effect) {
         guard var current = profile else { return }
-        current.lockout.apply(effect, now: Date())
+        current.lockout.apply(effect, now: Date(), boot: BootClock.current())
         persist(current)
     }
 

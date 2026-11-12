@@ -138,3 +138,66 @@ import Testing
     try store.delete("k")
     #expect(try store.load("k") == nil)
 }
+
+private let bootA = BootClock(session: "A", uptime: 1000)
+private let t0 = Date(timeIntervalSince1970: 1_000_000)
+private func locked(at time: Date, boot: BootClock?) -> Lockout {
+    var l = Lockout()
+    for _ in 0..<5 { l.recordFailure(now: time, boot: boot) }
+    return l
+}
+
+@Test func changingTheClockWithinOneBootDoesNotMoveTheCooldown() {
+    let l = locked(at: t0, boot: bootA)
+    let tenSecondsOn = BootClock(session: "A", uptime: 1010)
+    #expect(l.remaining(now: t0.addingTimeInterval(10), boot: tenSecondsOn) == 290)
+    #expect(l.remaining(now: t0.addingTimeInterval(86_400), boot: tenSecondsOn) == 290)    // clock set forward
+    #expect(l.remaining(now: t0.addingTimeInterval(-86_400), boot: tenSecondsOn) == 290)   // clock set back
+    #expect(l.remaining(now: t0.addingTimeInterval(-86_400), boot: BootClock(session: "A", uptime: 1300)) == nil)
+}
+
+@Test func afterARestartTheWallClockDecidesCappedAtTheCooldown() {
+    let l = locked(at: t0, boot: bootA)
+    let restarted = BootClock(session: "B", uptime: 5)
+    #expect(l.remaining(now: t0.addingTimeInterval(100), boot: restarted) == 200)
+    #expect(l.remaining(now: t0.addingTimeInterval(-86_400), boot: restarted) == 300)
+    #expect(l.remaining(now: t0.addingTimeInterval(300), boot: restarted) == nil)
+    #expect(l.remaining(now: t0.addingTimeInterval(100)) == 200)
+}
+
+@Test func aFailureAfterTheCooldownCountsFromOneWhateverTheClockSays() {
+    var l = locked(at: t0, boot: bootA)
+    l.recordFailure(now: t0.addingTimeInterval(-86_400), boot: BootClock(session: "A", uptime: 1301))
+    #expect(l.failures == 1 && l.lockedUntil == nil && l.lockedFor == nil && l.lockedBootSession == nil && l.lockedUptime == nil)
+}
+
+@Test func lockoutsSavedBeforeBootTrackingUseTheWallClock() throws {
+    let l = try JSONDecoder().decode(Lockout.self, from: Data(#"{"failures":0,"lockCount":1,"lockedUntil":1000}"#.utf8))
+    #expect(l.remaining(now: Date(timeIntervalSinceReferenceDate: 900), boot: bootA) == 100)
+}
+
+@Test func lockoutRoundTripsThroughJSONWithItsBootFields() throws {
+    let l = locked(at: t0, boot: bootA)
+    #expect(try JSONDecoder().decode(Lockout.self, from: JSONEncoder().encode(l)) == l)
+    #expect(l.lockedFor == 300 && l.lockedBootSession == "A" && l.lockedUptime == 1000)
+}
+
+@Test func mergingKeepsTheWholeLaterLockout() {
+    let earlier = locked(at: t0, boot: bootA)
+    let later = locked(at: t0.addingTimeInterval(60), boot: BootClock(session: "A", uptime: 1060))
+    let now = BootClock(session: "A", uptime: 1070)
+    for merged in [Lockout.mostRestrictive(earlier, later), .mostRestrictive(later, earlier), .mostRestrictive(later, Lockout())] {
+        #expect(merged.remaining(now: t0, boot: now) == 290)
+    }
+}
+
+@Test func aTamperedLockoutIsTheLongestCooldown() {
+    let l = Lockout.tampered(now: t0, boot: bootA)
+    #expect(l.remaining(now: t0, boot: bootA) == 14_400)
+    #expect(l.lockCount == Lockout.cooldowns.count && l.failures == 0)
+}
+
+@Test func theBootClockReadsTheSameSessionAndNeverGoesBack() throws {
+    let first = try #require(BootClock.current()), second = try #require(BootClock.current())
+    #expect(!first.session.isEmpty && first.session == second.session && second.uptime >= first.uptime)
+}
