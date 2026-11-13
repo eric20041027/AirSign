@@ -564,7 +564,7 @@ final class AppModel: ObservableObject {
     private func pairThisMac(withCode code: String) -> String {
         do {
             let added = try store.addPairedRecoveryKey(RecoveryCode.privateKey(for: code))
-            pairedMacs = store.pairedMacs()
+            pairedMacs = .readable(count: try store.pairedRecoveryKeys().count)
             return added
                 ? "Paired: files from that Mac now open here with your AirPods and signature."
                 : "This Mac was already paired with that one."
