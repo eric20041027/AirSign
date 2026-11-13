@@ -11,6 +11,7 @@ extension AppModel {
 
     /// Adds the signature that just unlocked strongly, so AirSign follows how the signature drifts over time.
     func addSampleFromLastUnlock() {
+        guard allows(.addSample) else { return }
         guard var current = profile, let signature = sampleCandidate else { return }
         do {
             current.enrollment = try adding(signature, to: current.enrollment)
@@ -25,6 +26,7 @@ extension AppModel {
     }
 
     func removeAddedSamples() {
+        guard allows(.removeSamples) else { return }
         guard var current = profile, current.enrollment.addedCount > 0 else { return }
         current.enrollment = removingAddedSamples(from: current.enrollment)
         guard persist(current) else { return }
@@ -32,6 +34,7 @@ extension AppModel {
     }
 
     func forgetPairedMacs() {
+        guard allows(.forgetPairedMacs) else { return }
         do {
             try store.forgetPairedMacs()
             pairedMacs = .readable(count: 0)
@@ -45,6 +48,7 @@ extension AppModel {
 
     /// Turning demo mode off is free; turning it on needs the owner, since it shows scores.
     func setDemoMode(_ on: Bool) {
+        guard allows(.setDemoMode) else { return }
         guard var current = profile, on != current.demoMode else { return }
         if on {
             beginIdentityCheck(.enableDemo, prompt: "Turning demo mode on shows scores: sign once, or use the recovery code.")

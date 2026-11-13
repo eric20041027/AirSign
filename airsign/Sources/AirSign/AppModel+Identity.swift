@@ -18,15 +18,25 @@ extension AppModel {
             #endif
             }
         }
+
+        var appAction: AppAction {
+            switch action {
+            case .changeSignature: return .changeSignature
+            case .enableDemo: return .setDemoMode
+            case .openLab: return .labAction
+            }
+        }
     }
 
     // MARK: - Proving identity (change signature, open the test lab)
 
     func beginChangeSignature() {
+        guard allows(.changeSignature) else { return }
         beginIdentityCheck(.changeSignature, prompt: "Changing your signature needs your recovery code: press “Use recovery code…”.")
     }
 
     func beginIdentityCheck(_ purpose: IdentityPurpose, prompt: String) {
+        guard allows(purpose.appAction) else { return }
         stopCapture()
         identityPurpose = purpose
         identityNeedsCode = purpose.action.needsRecoveryCode
@@ -37,6 +47,7 @@ extension AppModel {
     }
 
     func confirmIdentity(_ signature: Signature) {
+        guard allows(.signatureTry) else { return }
         guard let current = profile else { return }
         guard !identityNeedsCode else {
             say("Changing the signature needs the recovery code: use “Use recovery code…”.", .warn)

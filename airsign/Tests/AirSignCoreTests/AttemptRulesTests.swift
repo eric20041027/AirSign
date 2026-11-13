@@ -70,10 +70,10 @@ struct AttemptRulesTests {
         #expect(!PairingRule.shouldPair(requested: true, hasProfile: true, restored: 0))
     }
 
-    @Test func aSignatureIsCountedBeforeAnyFileIsOpened() {
+    @Test @MainActor func aSignatureIsCountedBeforeAnyFileIsOpened() async {
         let recorder = CallRecorder()
         recorder.outcome.restored = [URL(fileURLWithPath: "/tmp/restored.txt")]
-        let step = UnlockAttempt.signature(verdict(accepted: true), count: recorder.count, openFiles: recorder.open)
+        let step = await UnlockAttempt.signature(verdict(accepted: true), count: recorder.count, openFiles: recorder.open)
         #expect(recorder.calls == ["count:success", "open"])
         guard case .opened(let outcome) = step else {
             Issue.record("a saved accepted signature must open its files")
@@ -82,9 +82,9 @@ struct AttemptRulesTests {
         #expect(outcome.restored == recorder.outcome.restored)
     }
 
-    @Test func aRejectedSignatureOpensNothing() {
+    @Test @MainActor func aRejectedSignatureOpensNothing() async {
         let saved = CallRecorder()
-        let savedStep = UnlockAttempt.signature(verdict(accepted: false, .scoreTooHigh), count: saved.count, openFiles: saved.open)
+        let savedStep = await UnlockAttempt.signature(verdict(accepted: false, .scoreTooHigh), count: saved.count, openFiles: saved.open)
         #expect(saved.calls == ["count:failure"])
         guard case .rejected = savedStep else {
             Issue.record("a rejected signature must report its rejection after saving the count")
@@ -93,7 +93,7 @@ struct AttemptRulesTests {
 
         let unsaved = CallRecorder()
         unsaved.saves = false
-        let unsavedStep = UnlockAttempt.signature(verdict(accepted: false, .scoreTooHigh), count: unsaved.count, openFiles: unsaved.open)
+        let unsavedStep = await UnlockAttempt.signature(verdict(accepted: false, .scoreTooHigh), count: unsaved.count, openFiles: unsaved.open)
         #expect(unsaved.calls == ["count:failure"])
         guard case .countNotSaved = unsavedStep else {
             Issue.record("a failed save must take precedence over reporting the rejection")
@@ -101,10 +101,10 @@ struct AttemptRulesTests {
         }
     }
 
-    @Test func anAcceptedSignatureWhoseCountCannotBeSavedOpensNothing() {
+    @Test @MainActor func anAcceptedSignatureWhoseCountCannotBeSavedOpensNothing() async {
         let recorder = CallRecorder()
         recorder.saves = false
-        let step = UnlockAttempt.signature(verdict(accepted: true), count: recorder.count, openFiles: recorder.open)
+        let step = await UnlockAttempt.signature(verdict(accepted: true), count: recorder.count, openFiles: recorder.open)
         #expect(recorder.calls == ["count:success"])
         guard case .countNotSaved = step else {
             Issue.record("an accepted signature must wait for a saved count before opening files")
@@ -112,9 +112,9 @@ struct AttemptRulesTests {
         }
     }
 
-    @Test func aSignatureFromAnUnknownDeviceIsNotCountedAndOpensNothing() {
+    @Test @MainActor func aSignatureFromAnUnknownDeviceIsNotCountedAndOpensNothing() async {
         let recorder = CallRecorder()
-        let step = UnlockAttempt.signature(verdict(accepted: false, .deviceUnknown), count: recorder.count, openFiles: recorder.open)
+        let step = await UnlockAttempt.signature(verdict(accepted: false, .deviceUnknown), count: recorder.count, openFiles: recorder.open)
         #expect(recorder.calls.isEmpty)
         guard case .notCounted = step else {
             Issue.record("an unknown device must leave the count and files alone")
@@ -122,7 +122,7 @@ struct AttemptRulesTests {
         }
     }
 
-    @Test func aRecoveryCodeIsCountedAfterItsFilesFromWhatItOpened() {
+    @Test @MainActor func aRecoveryCodeIsCountedAfterItsFilesFromWhatItOpened() async {
         let first = URL(fileURLWithPath: "/tmp/first.txt")
         let second = URL(fileURLWithPath: "/tmp/second.txt")
         let cases: [(restored: [URL], wrongKey: [URL], effect: String)] = [
@@ -137,7 +137,7 @@ struct AttemptRulesTests {
                 recorder.outcome.restored = item.restored
                 recorder.outcome.wrongKey = item.wrongKey
                 recorder.outcome.failures = [.init(url: first, error: LockedFileError.notAirSignFile)]
-                let step = UnlockAttempt.recoveryCode(openFiles: recorder.open, count: recorder.count)
+                let step = await UnlockAttempt.recoveryCode(openFiles: recorder.open, count: recorder.count)
                 #expect(recorder.calls == ["open", "count:\(item.effect)"])
                 let outcome: UnlockOutcome
                 switch step {

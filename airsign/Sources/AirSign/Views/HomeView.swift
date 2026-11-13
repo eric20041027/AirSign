@@ -16,6 +16,7 @@ struct HomeView: View {
                 #if AIRSIGN_LAB
                 if model.testMode {
                     Button("Open test lab") { model.beginLab() }
+                        .disabled(model.isBusy)
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
                 }

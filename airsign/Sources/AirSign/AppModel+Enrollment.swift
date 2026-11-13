@@ -5,6 +5,7 @@ extension AppModel {
     // MARK: - Enrollment
 
     func beginReset() {
+        guard allows(.reset) else { return }
         cancelToHome()
         isResetting = true
         screen = .enroll
@@ -12,6 +13,7 @@ extension AppModel {
     }
 
     func addEnrollment(_ signature: Signature, rows: [MotionSample]) {
+        guard allows(.enrollmentStep) else { return }
         let result = enrollmentSession.add(signature, deviceUID: AudioDeviceIdentity.headphoneUID())
         recordEnrollmentRows(rows, result: result)
         finishEnrollment(result)
@@ -40,6 +42,7 @@ extension AppModel {
 
     /// Every check must pass; one miss means the enrolled signatures weren't steady enough to rely on.
     func checkEnrollment(_ signature: Signature) {
+        guard allows(.enrollmentStep) else { return }
         guard enrollmentSession.pending != nil else { return }
         switch enrollmentSession.check(signature, deviceUID: AudioDeviceIdentity.headphoneUID()) {
         case .notCounted(let verdict):
@@ -84,6 +87,7 @@ extension AppModel {
     }
 
     func confirmRecoveryCodeWritten() {
+        guard allows(.enrollmentStep) else { return }
         guard let pending = pendingProfile else { return }
         recoveryCodeToShow = nil
         pendingProfile = nil
@@ -111,6 +115,7 @@ extension AppModel {
     }
 
     func restartEnrollment() {
+        guard allows(.enrollmentStep) else { return }
         stopCapture()
         clearEnrollment(keepingStrength: false)
         livePath = []

@@ -46,5 +46,6 @@ struct SettingsView: View {
             }
             Button("Change signature…") { model.beginChangeSignature() }
         }
+        .disabled(model.isBusy)
     }
 }

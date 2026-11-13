@@ -24,6 +24,7 @@ extension AppModel {
     }
 
     func beginLab() {
+        guard allows(.labAction) else { return }
         guard testMode else { return }
         beginIdentityCheck(.openLab, prompt: "The owner opens the test lab: sign once, or use the recovery code.")
     }
@@ -32,6 +33,7 @@ extension AppModel {
 
     /// The owner re-enrolls from inside the lab so the templates' raw motion is logged too.
     func reenrollOwnerFromLab() {
+        guard allows(.labAction) else { return }
         guard testMode, screen == .lab else { return }
         guard !testOwner.trimmingCharacters(in: .whitespaces).isEmpty else {
             say("Type the owner's name first, so the enrollment is logged under the right person.", .warn)
@@ -45,10 +47,12 @@ extension AppModel {
     }
 
     func leaveLab() {
+        guard allows(.labAction) else { return }
         cancelToHome()
     }
 
     func labVerify(_ signature: Signature, rows: [MotionSample]) {
+        guard allows(.labAction) else { return }
         guard let current = profile else {
             say("Enroll the owner first.", .warn)
             return

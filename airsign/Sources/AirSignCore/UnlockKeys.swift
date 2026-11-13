@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-public struct UnlockKeys {
+public struct UnlockKeys: Sendable {
     private let master: SymmetricKey
     private let paired: [Curve25519.KeyAgreement.PrivateKey]
 

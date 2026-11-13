@@ -6,6 +6,7 @@ extension AppModel {
     // MARK: - Unlock
 
     func verifyAndUnlock(_ signature: Signature) {
+        guard allows(.signatureTry) else { return }
         guard let current = profile else {
             say("This Mac has no AirSign signature. Use the recovery code.", .warn)
             return
@@ -16,22 +17,31 @@ extension AppModel {
         if verdict.rejection != .deviceUnknown {
             sampleCandidate = verdict.canBecomeSample ? signature : nil
         }
+        let urls = pendingUnlock
+        beginFileWork("Unlocking", count: urls.count)
+        Task { await unlockWithSignature(verdict, urls: urls, demoMode: current.demoMode) }
+    }
+
+    private func unlockWithSignature(_ verdict: Verdict, urls: [URL], demoMode: Bool) async {
+        defer { endFileWork() }
         do {
-            let step = try UnlockAttempt.signature(verdict, count: adjustLockout) {
+            let step = try await UnlockAttempt.signature(verdict, count: adjustLockout) {
                 let master = try store.masterKey()
                 let paired = try store.pairedRecoveryKeys()
                 let keys = UnlockKeys(master: master, paired: paired)
-                return unlockPending(open: keys.open)
+                let outcome = await fileWorker.unlock(urls, keys: keys)
+                pendingUnlock = outcome.wrongKey
+                return outcome
             }
             switch step {
             case .notCounted:
                 say(Self.describe(verdict), .warn)
             case .rejected:
-                say(current.demoMode ? Self.describe(verdict) : "Not recognized.", .bad)
+                say(demoMode ? Self.describe(verdict) : "Not recognized.", .bad)
             case .countNotSaved:
                 return
             case .opened(let outcome):
-                reportSignatureUnlock(outcome, verdict: verdict, demoMode: current.demoMode)
+                reportSignatureUnlock(outcome, verdict: verdict, demoMode: demoMode)
             }
         } catch ProfileStoreError.keyMissing {
             block(.keyMissing)
@@ -57,6 +67,7 @@ extension AppModel {
 
     /// `rememberOnThisMac` pairs this Mac with the one that locked the file, once the code has opened it.
     func submitRecoveryCode(_ code: String, rememberOnThisMac: Bool = false) {
+        guard allows(.recoveryCodeTry) else { return }
         if let refusal = AttemptGate.refusal(lockout: profile?.lockout, saveBlocked: saveBlocked, now: Date(), boot: BootClock.current()) {
             switch refusal {
             case .coolingDown(let remaining):
@@ -81,8 +92,17 @@ extension AppModel {
             identityConfirmed()
             return
         }
-        let step = UnlockAttempt.recoveryCode(openFiles: {
-            unlockPending { try LockedFile.open($0, recoveryCode: code) }
+        let urls = pendingUnlock
+        beginFileWork("Unlocking", count: urls.count)
+        Task { await unlockWithRecoveryCode(code, urls: urls, rememberOnThisMac: rememberOnThisMac) }
+    }
+
+    private func unlockWithRecoveryCode(_ code: String, urls: [URL], rememberOnThisMac: Bool) async {
+        defer { endFileWork() }
+        let step = await UnlockAttempt.recoveryCode(openFiles: {
+            let outcome = await fileWorker.unlock(urls, recoveryCode: code)
+            pendingUnlock = outcome.wrongKey
+            return outcome
         }, count: adjustLockout)
         guard case .counted(let outcome) = step else { return }
         var extra = outcome.wrongKey.map { "\($0.lastPathComponent): wrong recovery code." }
@@ -105,12 +125,6 @@ extension AppModel {
         } catch {
             return "Could not pair this Mac: \(error.localizedDescription)"
         }
-    }
-
-    private func unlockPending(open: (Data) throws -> (name: String, plaintext: Data)) -> UnlockOutcome {
-        let outcome = UnlockRun.run(pendingUnlock, locker: FileLocker(), open: open)
-        pendingUnlock = outcome.wrongKey
-        return outcome
     }
 
     /// `stayOnScreen` keeps a signature unlock on its result, so the signature can still be turned and shown.

@@ -4,13 +4,14 @@ public enum UnlockAttempt {
     }
 
     /// Counts the try first. Files are opened only when the signature was accepted and the count was saved.
+    @MainActor
     public static func signature(_ verdict: Verdict, count: (Lockout.Effect) -> Bool,
-                                 openFiles: () throws -> UnlockOutcome) rethrows -> SignatureStep {
+                                 openFiles: () async throws -> UnlockOutcome) async rethrows -> SignatureStep {
         let effect = AttemptResult.signature(verdict).lockoutEffect
         guard effect != .none else { return .notCounted }
         guard count(effect) else { return .countNotSaved }
         guard verdict.accepted else { return .rejected }
-        return .opened(try openFiles())
+        return .opened(try await openFiles())
     }
 
     public enum RecoveryStep {
@@ -18,9 +19,10 @@ public enum UnlockAttempt {
     }
 
     /// Opens first, then counts from what the code opened.
-    public static func recoveryCode(openFiles: () -> UnlockOutcome,
-                                    count: (Lockout.Effect) -> Bool) -> RecoveryStep {
-        let outcome = openFiles()
+    @MainActor
+    public static func recoveryCode(openFiles: () async -> UnlockOutcome,
+                                    count: (Lockout.Effect) -> Bool) async -> RecoveryStep {
+        let outcome = await openFiles()
         let effect = AttemptResult.recoveryUnlock(restored: outcome.restored.count, wrongKey: outcome.wrongKey.count).lockoutEffect
         guard count(effect) else { return .countNotSaved(outcome) }
         return .counted(outcome)

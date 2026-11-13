@@ -27,6 +27,8 @@ final class AppModel: ObservableObject {
     @Published var livePath: [SIMD3<Double>] = []
     @Published private(set) var message = ""
     @Published private(set) var tone: Tone = .neutral
+    @Published var fileWork: String?
+    var isBusy: Bool { fileWork != nil }
     @Published var lastVerdict: Verdict?
     /// The last unlocking signature, kept only when it passed strongly enough to be added to the enrollment.
     @Published var sampleCandidate: Signature?
@@ -71,6 +73,8 @@ final class AppModel: ObservableObject {
         return ProfileStore(directory: ProfileStore.defaultDirectory, secrets: KeychainSecretStore())
     }()
     let motion = HeadphoneMotionSource()
+    let fileWorker = FileWorker()
+    var openQueue = OpenQueue()
     var recorder = SignatureRecorder()
     var signingSamples: [MotionSample] = []
     var enrollmentSession = EnrollmentSession() {
@@ -110,6 +114,7 @@ final class AppModel: ObservableObject {
     }
 
     func retryLaunch() {
+        guard allows(.retryLaunch) else { return }
         profile = nil
         blockReason = nil
         saveBlocked = false
@@ -141,6 +146,14 @@ final class AppModel: ObservableObject {
     }
 
     // MARK: - Helpers
+
+    func allows(_ action: AppAction) -> Bool {
+        guard BusyPolicy.allows(action, whileBusy: isBusy) else {
+            say("AirSign is still working on the files.", .neutral)
+            return false
+        }
+        return true
+    }
 
     func adjustLockout(_ effect: Lockout.Effect) -> Bool {
         guard var current = profile else { return true }

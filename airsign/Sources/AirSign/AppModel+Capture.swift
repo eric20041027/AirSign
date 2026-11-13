@@ -5,6 +5,8 @@ extension AppModel {
     // MARK: - Capture
 
     func toggleCapture() {
+        let action: AppAction = screen == .enroll ? .enrollmentStep : (screen == .lab ? .labAction : .signatureTry)
+        guard allows(action) else { return }
         if isCapturing {
             stopCapture()
             say("Cancelled.", .neutral)
@@ -118,6 +120,7 @@ extension AppModel {
     }
 
     func cancelToHome() {
+        guard allows(.cancel) else { return }
         stopCapture()
         sampleCandidate = nil
         identityNeedsCode = false
