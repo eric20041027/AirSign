@@ -562,9 +562,11 @@ final class AppModel: ObservableObject {
 
     /// Only a Mac with its own enrolled signature can be paired; a public Mac just uses the code once.
     private func pairThisMac(withCode code: String) -> String {
+        defer { pairedMacs = store.pairedMacs() }
         do {
             let added = try store.addPairedRecoveryKey(RecoveryCode.privateKey(for: code))
-            pairedMacs = .readable(count: try store.pairedRecoveryKeys().count)
+            // A failed read after adding must still report a pairing error.
+            _ = try store.pairedRecoveryKeys()
             return added
                 ? "Paired: files from that Mac now open here with your AirPods and signature."
                 : "This Mac was already paired with that one."
