@@ -40,6 +40,19 @@ public enum LaunchState: Equatable {
     }
 }
 
+public enum PairedMacs: Equatable, Sendable {
+    case readable(count: Int)
+    case unreadable
+
+    /// There is something to remove, or what is there can't be read.
+    public var canForget: Bool {
+        switch self {
+        case .readable(let count): return count > 0
+        case .unreadable: return true
+        }
+    }
+}
+
 /// Keeps the enrolled signatures and settings on this Mac only, encrypted at rest with a
 /// key held in the secret store. Also owns the master key that wraps every file's data key.
 public struct ProfileStore {
@@ -189,6 +202,12 @@ public struct ProfileStore {
     }
 
     // MARK: - Paired Macs
+
+    /// Never throws: a Keychain error or stored bytes that are not keys are `.unreadable`.
+    public func pairedMacs() -> PairedMacs {
+        do { return .readable(count: try pairedRecoveryKeys().count) }
+        catch { return .unreadable }
+    }
 
     /// Recovery keys of the owner's other Macs. Files locked there open here after this Mac's signature check.
     public func pairedRecoveryKeys() throws -> [Curve25519.KeyAgreement.PrivateKey] {

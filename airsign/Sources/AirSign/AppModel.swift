@@ -46,7 +46,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var lockoutRemaining: TimeInterval?
     /// Set while the profile can't be written: attempts are refused so the lockout can't be dodged.
     @Published private(set) var saveBlocked = false
-    @Published private(set) var pairedMacCount = 0
+    @Published private(set) var pairedMacs: PairedMacs = .readable(count: 0)
     @Published var thresholdOverride: Double?
 
     #if AIRSIGN_LAB
@@ -137,7 +137,7 @@ final class AppModel: ObservableObject {
         case .blocked(let reason):
             block(reason)
         }
-        pairedMacCount = (try? store.pairedRecoveryKeys().count) ?? 0
+        pairedMacs = store.pairedMacs()
     }
 
     private func block(_ reason: BlockReason) {
@@ -441,7 +441,7 @@ final class AppModel: ObservableObject {
         do {
             try store.createProfile(pending, replacingExisting: isResetting)
             profile = pending
-            pairedMacCount = 0
+            pairedMacs = .readable(count: 0)
             blockReason = nil
             isResetting = false
         } catch {
@@ -564,7 +564,7 @@ final class AppModel: ObservableObject {
     private func pairThisMac(withCode code: String) -> String {
         do {
             let added = try store.addPairedRecoveryKey(RecoveryCode.privateKey(for: code))
-            pairedMacCount = try store.pairedRecoveryKeys().count
+            pairedMacs = store.pairedMacs()
             return added
                 ? "Paired: files from that Mac now open here with your AirPods and signature."
                 : "This Mac was already paired with that one."
@@ -598,7 +598,7 @@ final class AppModel: ObservableObject {
     func forgetPairedMacs() {
         do {
             try store.forgetPairedMacs()
-            pairedMacCount = 0
+            pairedMacs = .readable(count: 0)
             say("Forgot all paired Macs. Their files open here only with their recovery codes.", .good)
         } catch {
             say("Could not forget paired Macs: \(error.localizedDescription)", .bad)
