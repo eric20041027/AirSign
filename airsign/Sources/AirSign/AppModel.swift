@@ -76,6 +76,14 @@ final class AppModel: ObservableObject {
     private let motion = HeadphoneMotionSource()
     private var recorder = SignatureRecorder()
     private var signingSamples: [MotionSample] = []
+    private var enrollmentSession = EnrollmentSession() {
+        didSet {
+            enrolledSoFar = enrollmentSession.signatures
+            pendingEnrollment = enrollmentSession.pending
+            confirmations = enrollmentSession.confirmations
+            enrollStrength = enrollmentSession.strength
+        }
+    }
     #if AIRSIGN_LAB
     private var enrolledRows: [[MotionSample]] = []
     private var returnToLabAfterEnroll = false
@@ -339,79 +347,60 @@ final class AppModel: ObservableObject {
     }
 
     private func addEnrollment(_ signature: Signature, rows: [MotionSample]) {
-        if let first = enrolledSoFar.first, first.side != signature.side {
-            say("Use the same AirPod as your first signature (\(first.side.rawValue)).", .warn)
-            return
-        }
-        if enrolledSoFar.isEmpty { enrollStrength = nil }
-        enrolledSoFar.append(signature)
+        let result = enrollmentSession.add(signature, deviceUID: AudioDeviceIdentity.headphoneUID())
         #if AIRSIGN_LAB
-        enrolledRows.append(rows)
-        #endif
-        guard enrolledSoFar.count >= MatcherConfig.enrollCount else {
-            say("Got \(enrolledSoFar.count) of \(MatcherConfig.enrollCount). Sign again the same way.", .good)
-            return
+        switch result {
+        case .wrongSide: break
+        default: enrolledRows.append(rows)
         }
-        finishEnrollment()
+        #endif
+        finishEnrollment(result)
     }
 
-    private func finishEnrollment() {
-        guard let deviceUID = AudioDeviceIdentity.headphoneUID() else {
-            enrolledSoFar.removeLast()
+    private func finishEnrollment(_ result: EnrollmentSession.AddResult) {
+        switch result {
+        case .wrongSide(let expected):
+            say("Use the same AirPod as your first signature (\(expected.rawValue)).", .warn)
+        case .needMore(let have):
+            say("Got \(have) of \(MatcherConfig.enrollCount). Sign again the same way.", .good)
+        case .noOutputDevice:
             #if AIRSIGN_LAB
             enrolledRows.removeLast()
             #endif
             say("Set the sound output to your AirPods (Control Center → Sound), then sign once more.", .bad)
-            return
-        }
-        let strength = SignatureStrength.of(enrolledSoFar)
-        enrollStrength = strength
-        guard strength.level != .weak else {
+        case .tooWeak(let strength):
             clearEnrollment()
             let reasons = strength.issues.map { Self.describe($0, strength.metrics) }.joined(separator: "; ")
             say("This signature is too easy to copy: \(reasons). Enroll again with a longer, bigger signature that changes direction more.", .bad)
-            return
-        }
-        do {
-            pendingEnrollment = try enroll(enrolledSoFar, deviceUID: deviceUID)
-            confirmations = 0
-            say("Now sign \(MatcherConfig.confirmCount) more times the same way, to check AirSign recognizes you.", .good)
-        } catch {
+        case .cannotBuild(let description):
             clearEnrollment()
-            say("Could not build the signature: \(error.localizedDescription). Start again.", .bad)
+            say("Could not build the signature: \(description). Start again.", .bad)
+        case .readyToConfirm:
+            say("Now sign \(MatcherConfig.confirmCount) more times the same way, to check AirSign recognizes you.", .good)
         }
     }
 
     /// Every check must pass; one miss means the enrolled signatures weren't steady enough to rely on.
     private func checkEnrollment(_ signature: Signature) {
-        guard let candidate = pendingEnrollment else { return }
-        let verdict = verify(signature, deviceUID: AudioDeviceIdentity.headphoneUID(), against: candidate)
-        if verdict.rejection == .deviceUnknown {
+        guard enrollmentSession.pending != nil else { return }
+        switch enrollmentSession.check(signature, deviceUID: AudioDeviceIdentity.headphoneUID()) {
+        case .notCounted(let verdict):
             say(Self.describe(verdict), .warn)
-            return
-        }
-        guard verdict.accepted else {
-            let check = confirmations + 1
+        case .mismatch(let check):
             clearEnrollment()
             say("Check \(check) of \(MatcherConfig.confirmCount) didn't match, so the enrolled signatures weren't steady enough. "
                 + "Enroll again, signing the same way each time.", .bad)
-            return
+        case .passed(let passed):
+            say("Check \(passed) of \(MatcherConfig.confirmCount) passed. Sign again.", .good)
+        case .complete(let enrollment):
+            finalizeEnrollment(enrollment)
         }
-        confirmations += 1
-        guard confirmations >= MatcherConfig.confirmCount else {
-            say("Check \(confirmations) of \(MatcherConfig.confirmCount) passed. Sign again.", .good)
-            return
-        }
-        finalizeEnrollment(candidate)
     }
 
     private func finalizeEnrollment(_ enrollment: Enrollment) {
-        pendingEnrollment = nil
-        confirmations = 0
         do {
-            if isReenrolling, var updated = profile {
-                updated.enrollment = enrollment
-                updated.lockout.recordSuccess()
+            switch try EnrollmentCompletion.complete(enrollment, changingSignatureOf: isReenrolling ? profile : nil) {
+            case .signatureChanged(let updated):
                 try save(updated)
                 #if AIRSIGN_LAB
                 logEnrollment(enrollment)
@@ -425,14 +414,11 @@ final class AppModel: ObservableObject {
                 screen = .home
                 #endif
                 say("New signature saved. Your locked files open with it.", .good)
-                return
+            case .awaitingCodeConfirmation(let pending, let code):
+                pendingProfile = pending
+                recoveryCodeToShow = code
+                say("Write down your recovery code. Your signature is saved when you confirm.", .good)
             }
-            let code = RecoveryCode.generate()
-            let recoveryKey = try RecoveryCode.privateKey(for: code).publicKey.rawRepresentation
-            // Demo mode shows scores, so it starts off and turning it on needs the owner.
-            pendingProfile = Profile(enrollment: enrollment, recoveryPublicKey: recoveryKey, lockout: Lockout(), demoMode: false)
-            recoveryCodeToShow = code
-            say("Write down your recovery code. Your signature is saved when you confirm.", .good)
         } catch ProfileStoreError.keyMissing {
             block(.keyMissing)
         } catch {
@@ -472,19 +458,16 @@ final class AppModel: ObservableObject {
 
     func restartEnrollment() {
         stopCapture()
-        clearEnrollment()
-        enrollStrength = nil
+        clearEnrollment(keepingStrength: false)
         livePath = []
         say("Start over: sign 3 times the same way.", .neutral)
     }
 
-    private func clearEnrollment() {
-        enrolledSoFar = []
+    private func clearEnrollment(keepingStrength: Bool = true) {
+        enrollmentSession.clear(keepingStrength: keepingStrength)
         #if AIRSIGN_LAB
         enrolledRows = []
         #endif
-        pendingEnrollment = nil
-        confirmations = 0
     }
 
     // MARK: - Unlock
@@ -632,10 +615,9 @@ final class AppModel: ObservableObject {
         #if AIRSIGN_LAB
         returnToLabAfterEnroll = false
         #endif
-        clearEnrollment()
+        clearEnrollment(keepingStrength: false)
         pendingProfile = nil
         recoveryCodeToShow = nil
-        enrollStrength = nil
         pendingUnlock = []
         lastVerdict = nil
         livePath = []
