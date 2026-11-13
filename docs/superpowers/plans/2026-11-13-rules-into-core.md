@@ -568,3 +568,8 @@ git commit -m "docs: say where the rules live and that file work runs in the bac
 3. Push `refactor/rules-into-core` and open the pull request. Its description has the table of rules with, for each, the test that pins it.
 4. CI green on the pull request.
 5. The maintainer's three hand checks from the spec, on their Mac with AirPods, before the merge.
+
+## Amendments made during execution
+
+- **Task 4, setters.** Swift does not let an extension in another file assign a `private(set)` property, so the published state that the new files assign has internal setters. The plan first said `private(set)` would stay; the text of Task 4 above is the corrected one.
+- **Tasks 2 and 5, `UnlockAttempt`.** The interface in Task 2 (two functions taking an `openFiles` closure, made `async` in Task 5) was replaced after Task 5, because an `async` function forced the app to start file work, show the progress line and defer the count for every signature try, accepted or not. `UnlockAttempt` is now two synchronous decisions: `signature(_ verdict:, count:) -> SignatureDecision` (`.notCounted`, `.rejected`, `.countNotSaved`, `.openFiles`) and `recoveryCode(_ outcome:, count:) -> RecoveryDecision` (`.counted`, `.countNotSaved`). `.openFiles` exists only after an accepted try whose count was saved, so no file can be opened before the try is counted, and the count happens in the same main-actor turn as the verification, as before this branch. A try that opens nothing never starts file work.
