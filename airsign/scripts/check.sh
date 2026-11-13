@@ -49,12 +49,40 @@ without_warnings() {
 }
 
 decode_small_strings() {
+  local whole=0
+  if [[ "${1:-}" == --whole ]]; then
+    whole=1
+    shift
+  fi
   # Keep 16-bit slices separately: awk numbers cannot hold every 64-bit integer.
-  awk '
+  awk -v whole="$whole" '
     function hex(s, n, i) {
       n = 0
       for (i = 1; i <= length(s); i++) n = 16 * n + index("0123456789abcdef", tolower(substr(s, i, 1))) - 1
       return n
+    }
+    function whole_string(count, i, n, byte, value) {
+      if (!have[0] || !have[1]) return
+      count = int(word[1, 3] / 256) - 224
+      if (count < 1 || count > 15) return
+      for (i = 0; i < 15; i++) {
+        n = word[int(i / 8), int((i % 8) / 2)]
+        byte = (i % 2 == 0 ? n % 256 : int(n / 256))
+        if (i < count) {
+          if (byte < 32 || byte > 126) return
+          value = value sprintf("%c", byte)
+        } else if (byte != 0) return
+      }
+      print value
+    }
+    # The lab binary passes the two string words in x0/x1 to contains().
+    whole && ($2 == "bl" || $2 == "blr") {
+      whole_string()
+      have[0] = have[1] = 0
+      next
+    }
+    whole && ($0 ~ /<.*>:$/ || $2 ~ /^(b|ret|cbz|cbnz|tbz|tbnz)/) {
+      have[0] = have[1] = 0
     }
     ($2 == "mov" || $2 == "movk") && $3 ~ /^[xw][0-9]+,$/ &&
         $4 ~ /^#-?0x[[:xdigit:]]+,?$/ {
@@ -82,17 +110,27 @@ decode_small_strings() {
       } else {
         shift = ($5 == "lsl" ? substr($6, 2) + 0 : 0)
         if (!have[register] || negative || length(digits) > 4 ||
-            shift % 16 != 0 || shift < 0 || shift >= 16 * width) next
+            shift % 16 != 0 || shift < 0 || shift >= 16 * width) {
+          if (whole) have[register] = 0
+          next
+        }
         word[register, shift / 16] = hex(digits)
         # A write to wN also clears the upper half of xN.
         if (width == 2) word[register, 2] = word[register, 3] = 0
       }
+      if (whole) next
       # Every update is a candidate, independent of other registers/instructions.
       for (i = 0; i < 4; i++) {
         n = word[register, i]
         printf "%c%c", n % 256, int(n / 256)
       }
       printf "\n"
+      next
+    }
+    whole {
+      # Discard argument words referenced by instructions we do not interpret.
+      if ($0 ~ /(^|[^[:alnum:]_])[xw]0([^[:alnum:]_]|$)/) have[0] = 0
+      if ($0 ~ /(^|[^[:alnum:]_])[xw]1([^[:alnum:]_]|$)/) have[1] = 0
     }
   ' "$@" | strings
 }
@@ -103,6 +141,12 @@ decoder_case() {
   for signature in "$@"; do
     grep -Fxq -- "$signature" <<< "$candidates" || return 1
   done
+}
+
+whole_decoder_case() {
+  local candidate
+  candidate="$(decode_small_strings --whole)" || return 1
+  [[ "$candidate" == "$1" ]]
 }
 
 check_decoder() {
@@ -139,6 +183,38 @@ ASM
   decoder_case main <<'ASM' || return 1
 100001930:     	mov	w1, #0x616d             ; =24941
 100001934:     	movk	w1, #0x6e69, lsl #16
+ASM
+  # Whole strings require both words, including zero padding and the length byte.
+  whole_decoder_case "${LAB_FLAGS[0]}" <<'ASM' || return 1
+10000630c:     	mov	x1, #0x646f
+100006310:     	movk	x1, #0x65, lsl #16
+100006314:     	movk	x1, #0xeb00, lsl #48
+100006318:     	mov	x0, #0x2d2d
+10000631c:     	movk	x0, #0x6574, lsl #16
+100006320:     	movk	x0, #0x7473, lsl #32
+100006324:     	movk	x0, #0x6d2d, lsl #48
+100006328:     	bl	0x100003dd8
+ASM
+  # The same eight-byte prefix with a misspelt suffix must decode as that spelling.
+  whole_decoder_case --test-mdoe <<'ASM' || return 1
+10000630c:     	mov	x0, #0x2d2d
+100006310:     	movk	x0, #0x6574, lsl #16
+100006314:     	movk	x0, #0x7473, lsl #32
+100006318:     	movk	x0, #0x6d2d, lsl #48
+10000631c:     	mov	x1, #0x6f64
+100006320:     	movk	x1, #0x65, lsl #16
+100006324:     	movk	x1, #0xeb00, lsl #48
+100006328:     	bl	0x100003dd8
+ASM
+  # The compiler loads --probe with a zero-padded x0 and a negative mov into x1.
+  whole_decoder_case "${LAB_FLAGS[1]}" <<'ASM' || return 1
+100001cd0:     	mov	x0, #0x2d2d
+100001cd4:     	movk	x0, #0x7270, lsl #16
+100001cd8:     	movk	x0, #0x626f, lsl #32
+100001cdc:     	movk	x0, #0x65, lsl #48
+100001ce0:     	mov	x1, #-0x1900000000000000
+100001ce4:     	mov	x2, x19
+100001ce8:     	bl	0x100003dd8
 ASM
 }
 
@@ -192,16 +268,33 @@ TEST_COUNT="$(awk '
   }
   END { if (runs != 1 || count == "") exit 1; print count }
 ' "$TEST_LOG")" || fail tests
-SKIPPED_TESTS="$(awk '
-  match($0, /(^|[[:space:]])(Test|Suite) .* skipped([[:space:][:punct:]]|$)/) {
-    name = substr($0, RSTART)
-    sub(/^[[:space:]]*/, "", name)
-    sub(/ skipped([[:space:][:punct:]].*)?$/, "", name)
-    sub(/^Test /, "", name)
-    sub(/\(\)$/, "", name)
-    if (name == "") exit 1
-    print name
+SKIPPED_TESTS="$(awk -v expected="$TEST_COUNT" '
+  # XCTest reports its empty run before Swift Testing.
+  /^Test Suite .* (started|passed|failed) at / { next }
+  /^[^[:alnum:]]*(Test|Suite) / {
+    outcome = $0
+    sub(/^[^[:alnum:]]*/, "", outcome)
+    if (outcome ~ /^Test run / || outcome ~ / started\.$/) next
+    if (outcome ~ /^(Test|Suite) .+ passed after [0-9]+(\.[0-9]+)? seconds\.$/) {
+      # A parameterized function has one result, with its case count before "passed".
+      if (outcome ~ /^Test / && outcome !~ /^Test case /) passed++
+      else if (outcome ~ /^Test case /) invalid = 1
+      next
+    }
+    if (outcome ~ /^Test .+ skipped([[:space:][:punct:]]|$)/) {
+      name = outcome
+      sub(/ skipped([[:space:][:punct:]].*)?$/, "", name)
+      sub(/^Test /, "", name)
+      sub(/\(\)$/, "", name)
+      if (name == "" || ++seen[name] > 1) invalid = 1
+      skipped++
+      print name
+      next
+    }
+    # Cancelled tests and any unfamiliar outcome fail closed, including suite skips.
+    invalid = 1
   }
+  END { if (invalid || passed + skipped != expected) exit 1 }
 ' "$TEST_LOG")" || fail "skipped tests"
 SKIPPED_SUMMARY="${SKIPPED_TESTS//$'\n'/, }"
 echo "tests: $TEST_COUNT run, skipped: ${SKIPPED_SUMMARY:-none}"
@@ -250,8 +343,10 @@ AIRSIGN_SIGN_ID=- AIRSIGN_LAB=1 AIRSIGN_APP="$WORK_DIR/lab/AirSign.app" \
   without_warnings "$WORK_DIR/lab-bundle.log" scripts/build-app.sh || fail "app bundle"
 bundle_strings "$WORK_DIR/default/AirSign.app/Contents/MacOS/AirSign" \
   "$WORK_DIR/default-strings.txt" "$WORK_DIR/default-assembly.txt" || fail "app bundle"
-bundle_strings "$WORK_DIR/lab/AirSign.app/Contents/MacOS/AirSign" \
-  "$WORK_DIR/lab-strings.txt" "$WORK_DIR/lab-assembly.txt" || fail "app bundle"
+strings "$WORK_DIR/lab/AirSign.app/Contents/MacOS/AirSign" > "$WORK_DIR/lab-strings.txt" || fail "app bundle"
+xcrun llvm-objdump --disassemble --no-show-raw-insn "$WORK_DIR/lab/AirSign.app/Contents/MacOS/AirSign" \
+  > "$WORK_DIR/lab-assembly.txt" || fail "app bundle"
+decode_small_strings --whole "$WORK_DIR/lab-assembly.txt" > "$WORK_DIR/lab-small-strings.txt" || fail "app bundle"
 for flag in "${LAB_FLAGS[@]}"; do
   # The prefix also matches a complete flag (or its prefix) in plain strings.
   signature="${flag:0:8}"
@@ -260,7 +355,10 @@ for flag in "${LAB_FLAGS[@]}"; do
   else
     [[ "$?" == 1 ]] || fail "app bundle"
   fi
-  grep -Fq -- "$signature" "$WORK_DIR/lab-strings.txt" || fail "app bundle"
+  case "$flag" in
+    --selftest-keychain) grep -Fxq -- "$flag" "$WORK_DIR/lab-strings.txt" || fail "app bundle" ;;
+    *) grep -Fxq -- "$flag" "$WORK_DIR/lab-small-strings.txt" || fail "app bundle" ;;
+  esac
 done
 
 echo "==> 6/6 machine paths"
