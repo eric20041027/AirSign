@@ -13,7 +13,7 @@ public func strokes(_ shape: (Double) -> SIMD3<Double>, n: Int = 110, noise: Dou
     }
 }
 
-public let ownerShape: (Double) -> SIMD3<Double> = { u in
+public let ownerShape: @Sendable (Double) -> SIMD3<Double> = { u in
     SIMD3(3 * sin(4 * .pi * u), 2 * cos(6 * .pi * u) + 0.8, 1.5 * sin(2 * .pi * u) + 1)
 }
 

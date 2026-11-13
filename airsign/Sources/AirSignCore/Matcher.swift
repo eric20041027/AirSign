@@ -15,7 +15,7 @@ public enum MatcherConfig {
 }
 
 /// How the threshold summarizes the spread between the enrolled signatures.
-public enum ThresholdRule: Equatable {
+public enum ThresholdRule: Equatable, Sendable {
     /// factor × the largest pairwise distance (the frozen baseline, built for 3 signatures)
     case worstPair
     /// factor × the mean pairwise distance, which doesn't loosen as more signatures are enrolled

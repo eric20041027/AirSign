@@ -12,7 +12,7 @@ func run(_ r: inout SignatureRecorder, _ samples: [MotionSample]) -> [RecorderEv
     samples.map { r.feed($0) }
 }
 
-let forgeryShape: (Double) -> SIMD3<Double> = { u in
+let forgeryShape: @Sendable (Double) -> SIMD3<Double> = { u in
     SIMD3(3 * sin(4 * .pi * u + 0.9), 2 * cos(4 * .pi * u) + 0.8, 1.5 * sin(3 * .pi * u) + 1)
 }
 

@@ -114,8 +114,8 @@ final class AppModel: ObservableObject {
 
     init() {
         retryLaunch()
-        motion.onSample = { [weak self] sample in MainActor.assumeIsolated { self?.handle(sample) } }
-        motion.onStatus = { [weak self] status in MainActor.assumeIsolated { self?.motionStatus = status } }
+        motion.onSample = { [weak self] sample in self?.handle(sample) }
+        motion.onStatus = { [weak self] status in self?.motionStatus = status }
         motion.start()
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
