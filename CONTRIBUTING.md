@@ -19,6 +19,24 @@ AIRSIGN_ADHOC=1 scripts/install.sh # without an Apple Development certificate
 
 With ad-hoc signing (`AIRSIGN_ADHOC=1`), macOS may ask for your password after each rebuild before AirSign can read its Keychain items. An Apple Development certificate avoids that: Xcode → Settings → Accounts → Manage Certificates → + → Apple Development.
 
+## Lab build
+
+A lab build adds the test lab behind `--test-mode`, the AirPods probe (`--probe`), the Keychain self-test (`--selftest-keychain`) and its clean-up command (`--selftest-keychain-clean`). From `airsign/`, build one with `AIRSIGN_LAB=1 scripts/build-app.sh`, or use `swift run` for a debug build. Its window title says "AirSign (lab build)". Add `AIRSIGN_ADHOC=1` when building without an Apple Development certificate.
+
+The test lab shows scores and writes raw signature motion in plaintext to the logs folder, `~/Library/Application Support/AirSign/test-logs`. It is for evaluation only, never for a Mac whose files matter. Never commit its logs or send them with a report.
+
+Set `AIRSIGN_SANDBOX=<folder>` when launching a lab build to keep its profile in that folder and its keys under the separate Keychain service `com.makeuc.airsign.sandbox`. The banner shows `Sandbox data: <path>` even without `--test-mode`. For example, from `airsign/` run `AIRSIGN_SANDBOX=/tmp/airsign-lab swift run AirSign --test-mode`. Use that sandbox to try enrollment, the blocking screen and Reset without touching a real profile. After enrolling, quit the lab app and move the sandbox's `profile.bin` aside to try first run again, or remove only its `profile-key` Keychain item to try the blocking screen and Reset. All sandbox folders share this Keychain service. The test lab's plaintext logs still go to the logs folder above.
+
+To remove the sandbox's Keychain items, quit the lab app and run the uninstall clean-up loop with its service. Files locked with sandbox keys then need their recovery code.
+
+```bash
+for account in profile-key master-key paired-recovery-keys lockout selftest; do
+  security delete-generic-password -s com.makeuc.airsign.sandbox -a "$account" >/dev/null
+done
+```
+
+An item-not-found error is fine when the sandbox never created that item. `AIRSIGN_SANDBOX=/tmp/airsign-lab swift run AirSign --selftest-keychain-clean` removes only the sandbox's self-test item.
+
 ## Where things are
 
 | Path | What it is |

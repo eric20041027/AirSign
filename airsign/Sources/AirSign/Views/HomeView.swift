@@ -13,11 +13,13 @@ struct HomeView: View {
             HStack {
                 Button("Lock a file…") { pick(lockedFiles: false) }
                 Button("Unlock a file…") { pick(lockedFiles: true) }
+                #if AIRSIGN_LAB
                 if model.testMode {
                     Button("Open test lab") { model.beginLab() }
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
                 }
+                #endif
             }
             Divider()
             SettingsView()

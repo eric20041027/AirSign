@@ -16,6 +16,29 @@ public struct Profile: Codable, Equatable {
     }
 }
 
+public enum ProfileStoreError: Error, Equatable {
+    case keyMissing(String)
+    case profileExists
+}
+
+public enum BlockReason: Equatable {
+    case keyMissing, profileUnreadable, storeError
+}
+
+public enum LaunchState: Equatable {
+    case noProfile, ready(Profile), blocked(BlockReason)
+
+    public var allowsEnrollment: Bool {
+        if case .noProfile = self { return true }
+        return false
+    }
+
+    public var allowsLocking: Bool {
+        if case .ready = self { return true }
+        return false
+    }
+}
+
 /// Keeps the enrolled signatures and settings on this Mac only, encrypted at rest with a
 /// key held in the secret store. Also owns the master key that wraps every file's data key.
 public struct ProfileStore {
@@ -39,26 +62,85 @@ public struct ProfileStore {
             .appendingPathComponent("AirSign", isDirectory: true)
     }
 
-    public func load() throws -> Profile? {
+    public func load(now: Date = Date(), boot: BootClock? = BootClock.current()) throws -> Profile? {
+        guard try profileExists() else { return nil }
+        let profileKey = try key(Self.profileKeyName)
+        let lockoutData = try secrets.load(Self.lockoutName)
+        var profile = try readProfile(using: profileKey, lockoutData: lockoutData, now: now, boot: boot)
+        let reanchored = profile.lockout.reanchored(now: now, boot: boot)
+        if lockoutData == nil || reanchored != profile.lockout {
+            profile.lockout = reanchored
+            try save(profile)
+        }
+        return profile
+    }
+
+    public func launchState(now: Date = Date(), boot: BootClock? = BootClock.current()) -> LaunchState {
+        do {
+            guard try profileExists() else { return .noProfile }
+        } catch {
+            return .blocked(.profileUnreadable)
+        }
+        let profileKey: Data?, masterKey: Data?, lockoutData: Data?
+        do {
+            profileKey = try secrets.load(Self.profileKeyName)
+            masterKey = try secrets.load(Self.masterKeyName)
+            lockoutData = try secrets.load(Self.lockoutName)
+        } catch {
+            return .blocked(.storeError)
+        }
+        guard let profileKey, masterKey != nil else { return .blocked(.keyMissing) }
+        var profile: Profile
+        do {
+            profile = try readProfile(using: SymmetricKey(data: profileKey), lockoutData: lockoutData,
+                                      now: now, boot: boot)
+        } catch {
+            return .blocked(.profileUnreadable)
+        }
+        let reanchored = profile.lockout.reanchored(now: now, boot: boot)
+        if lockoutData == nil || reanchored != profile.lockout {
+            profile.lockout = reanchored
+            do { try save(profile) }
+            catch { return .blocked(.storeError) }
+        }
+        return .ready(profile)
+    }
+
+    /// Only confirmed absence permits enrollment; an access error must block it.
+    private func profileExists() throws -> Bool {
+        do {
+            _ = try FileManager.default.attributesOfItem(
+                atPath: directory.appendingPathComponent(Self.fileName).path)
+            return true
+        } catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {
+            return false
+        }
+    }
+
+    private func readProfile(using profileKey: SymmetricKey, lockoutData: Data?,
+                             now: Date, boot: BootClock?) throws -> Profile {
         let url = directory.appendingPathComponent(Self.fileName)
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let box = try AES.GCM.SealedBox(combined: Data(contentsOf: url))
-        let plaintext = try AES.GCM.open(box, using: key(Self.profileKeyName))
+        let plaintext = try AES.GCM.open(box, using: profileKey)
         var profile = try JSONDecoder().decode(Profile.self, from: plaintext)
         // The Keychain keeps its own copy of the count, so restoring an old profile.bin can't reset it.
-        if let data = try secrets.load(Self.lockoutName) {
-            let kept = try JSONDecoder().decode(Lockout.self, from: data)
-            profile.lockout = Lockout.mostRestrictive(profile.lockout, kept)
+        if let lockoutData {
+            let kept = try JSONDecoder().decode(Lockout.self, from: lockoutData)
+            profile.lockout = Lockout.mostRestrictive(profile.lockout, kept, now: now, boot: boot)
+        } else {
+            profile.lockout = Lockout.mostRestrictive(profile.lockout, .tampered(now: now, boot: boot),
+                                                     now: now, boot: boot)
         }
         return profile
     }
 
     public func save(_ profile: Profile) throws {
+        let profileKey = try key(Self.profileKeyName)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
         try secrets.save(JSONEncoder().encode(profile.lockout), as: Self.lockoutName)
         let plaintext = try JSONEncoder().encode(profile)
-        guard let sealed = try AES.GCM.seal(plaintext, using: key(Self.profileKeyName)).combined else {
+        guard let sealed = try AES.GCM.seal(plaintext, using: profileKey).combined else {
             throw CocoaError(.fileWriteUnknown)
         }
         let url = directory.appendingPathComponent(Self.fileName)
@@ -66,13 +148,23 @@ public struct ProfileStore {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
-    /// First enrollment on this Mac, or after the profile was lost or deleted: a fresh master key,
+    /// First enrollment on this Mac, or an explicit reset: a fresh master key,
     /// so a newly enrolled signature can never open files locked earlier. Those open with their recovery code.
     /// Pairings belong to the previous owner too, so they are forgotten here.
-    public func createProfile(_ profile: Profile) throws {
-        let key = SymmetricKey(size: .bits256)
-        try secrets.save(key.withUnsafeBytes { Data($0) }, as: Self.masterKeyName)
+    public func createProfile(_ profile: Profile, replacingExisting: Bool = false) throws {
+        if try profileExists(), !replacingExisting {
+            throw ProfileStoreError.profileExists
+        }
+        // Invalidate the old profile before changing its master key, so a partial reset stays blocked.
+        try secrets.delete(Self.profileKeyName)
+        // Delete before saving so unreadable old items cannot prevent a reset.
+        try secrets.delete(Self.masterKeyName)
+        let masterKey = SymmetricKey(size: .bits256)
+        try secrets.save(masterKey.withUnsafeBytes { Data($0) }, as: Self.masterKeyName)
         try forgetPairedMacs()
+        try secrets.delete(Self.lockoutName)
+        let profileKey = SymmetricKey(size: .bits256)
+        try secrets.save(profileKey.withUnsafeBytes { Data($0) }, as: Self.profileKeyName)
         try save(profile)
     }
 
@@ -103,11 +195,9 @@ public struct ProfileStore {
         try key(Self.masterKeyName)
     }
 
-    /// Loads a 256-bit key, creating it on first use. A store error is thrown, never treated as "missing".
+    /// Reading never creates a key; only enrollment or reset may replace one.
     private func key(_ name: String) throws -> SymmetricKey {
-        if let data = try secrets.load(name) { return SymmetricKey(data: data) }
-        let key = SymmetricKey(size: .bits256)
-        try secrets.save(key.withUnsafeBytes { Data($0) }, as: name)
-        return key
+        guard let data = try secrets.load(name) else { throw ProfileStoreError.keyMissing(name) }
+        return SymmetricKey(data: data)
     }
 }

@@ -5,9 +5,9 @@ import Foundation
 enum FolderArchive {
     static func zip(_ folder: URL, maxBytes: Int) throws -> Data {
         guard try size(of: folder, stoppingAbove: maxBytes) <= maxBytes else { throw FileLockerError.tooLarge }
-        let work = try scratchDirectory()
-        defer { try? FileManager.default.removeItem(at: work) }
-        let archive = work.appendingPathComponent("folder.zip")
+        let work = try ScratchFolder()
+        defer { work.remove() }
+        let archive = work.url.appendingPathComponent("folder.zip")
         try ditto(["-c", "-k", "--keepParent", folder.path, archive.path])
         let data = try Data(contentsOf: archive)
         guard data.count <= maxBytes else { throw FileLockerError.tooLarge }
@@ -15,16 +15,17 @@ enum FolderArchive {
     }
 
     /// Unpacks into a fresh scratch folder first, then moves the one folder inside to `target`.
-    static func unzip(_ data: Data, to target: URL) throws {
-        let work = try scratchDirectory(near: target.deletingLastPathComponent())
-        defer { try? FileManager.default.removeItem(at: work) }
-        let archive = work.appendingPathComponent("folder.zip"), out = work.appendingPathComponent("out")
+    static func unzip(_ data: Data, to target: URL, willPublish: (_ source: URL, _ target: URL) throws -> Void) throws {
+        let work = try ScratchFolder(in: target.deletingLastPathComponent(), prefix: Scratch.partialPrefix)
+        defer { work.remove() }
+        let archive = work.url.appendingPathComponent("folder.zip"), out = work.url.appendingPathComponent("out")
         try data.write(to: archive)
         try ditto(["-x", "-k", archive.path, out.path])
         let items = try FileManager.default.contentsOfDirectory(at: out, includingPropertiesForKeys: nil)
             .filter { $0.lastPathComponent != "__MACOSX" }
         guard items.count == 1 else { throw FileLockerError.writeFailed("the locked folder's archive is not one folder") }
-        try FileManager.default.moveItem(at: items[0], to: target)
+        try willPublish(items[0], target)
+        try FileLocker.publish(items[0], to: target)
     }
 
     private static func size(of folder: URL, stoppingAbove limit: Int) throws -> Int {
@@ -39,17 +40,6 @@ enum FolderArchive {
             if total > limit { break }
         }
         return total
-    }
-
-    /// A new scratch folder, on the same volume as `near` when possible so the final move is a rename.
-    private static func scratchDirectory(near: URL? = nil) throws -> URL {
-        if let near, let dir = try? FileManager.default.url(for: .itemReplacementDirectory, in: .userDomainMask,
-                                                             appropriateFor: near, create: true) {
-            return dir
-        }
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("airsign-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
     }
 
     private static func ditto(_ arguments: [String]) throws {

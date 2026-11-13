@@ -7,15 +7,16 @@ enum Tone {
     case neutral, good, warn, bad
 }
 
-/// Drives every flow: enroll, lock, unlock by signature or recovery code, changing the signature,
-/// and (only when launched with `--test-mode`) the test lab.
+/// Drives enrollment, file locking, signature and recovery unlock, and settings.
 @MainActor
 final class AppModel: ObservableObject {
     enum Screen: Equatable {
-        case enroll, home, unlock, confirmIdentity, lab
+        case enroll, home, blocked, unlock, confirmIdentity, lab
     }
 
     @Published private(set) var profile: Profile?
+    @Published private(set) var blockReason: BlockReason?
+    @Published private(set) var isResetting = false
     @Published private(set) var screen: Screen = .home
     @Published private(set) var motionStatus: MotionStatus = .waitingForAirPods
     @Published private(set) var isCapturing = false
@@ -45,6 +46,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var pairedMacCount = 0
     @Published var thresholdOverride: Double?
 
+    #if AIRSIGN_LAB
     /// `open -a AirSign --args --test-mode` adds the test lab. Lab attempts open no files, so they
     /// never count toward the lockout; every other flow keeps it.
     let testMode = CommandLine.arguments.contains("--test-mode")
@@ -54,46 +56,98 @@ final class AppModel: ObservableObject {
     @Published var testSession = TestSession.tonight
     @Published var testScenario = TestScenario.owner
     @Published private(set) var labCounts: [String: Int] = [:]
-
-    private let store = ProfileStore(directory: ProfileStore.defaultDirectory, secrets: KeychainSecretStore())
+    let sandboxPath = ProcessInfo.processInfo.environment["AIRSIGN_SANDBOX"]
     private let attemptLog = AttemptLog(directory: AttemptLog.defaultDirectory)
+    #else
+    let testMode = false
+    #endif
+
+    private let store: ProfileStore = {
+        #if AIRSIGN_LAB
+        if let path = ProcessInfo.processInfo.environment["AIRSIGN_SANDBOX"] {
+            return ProfileStore(directory: URL(fileURLWithPath: path), secrets: KeychainSecretStore(service: "com.makeuc.airsign.sandbox"))
+        }
+        #endif
+        return ProfileStore(directory: ProfileStore.defaultDirectory, secrets: KeychainSecretStore())
+    }()
     private let motion = HeadphoneMotionSource()
     private var recorder = SignatureRecorder()
     private var signingSamples: [MotionSample] = []
+    #if AIRSIGN_LAB
     private var enrolledRows: [[MotionSample]] = []
+    private var returnToLabAfterEnroll = false
+    #endif
     /// A first enrollment waits here until the user confirms the recovery code, so quitting early saves nothing.
     private var pendingProfile: Profile?
     private var identityPurpose = IdentityPurpose.changeSignature
-    private var returnToLabAfterEnroll = false
     private var timer: Timer?
 
     private enum IdentityPurpose {
-        case changeSignature, changeSignatureFromLab, openLab, enableDemo
+        case changeSignature, enableDemo
+        #if AIRSIGN_LAB
+        case changeSignatureFromLab, openLab
+        #endif
 
         /// One lucky imitation must not be enough to replace the owner's signature.
-        var needsRecoveryCode: Bool { self == .changeSignature || self == .changeSignatureFromLab }
+        var needsRecoveryCode: Bool {
+            #if AIRSIGN_LAB
+            return self == .changeSignature || self == .changeSignatureFromLab
+            #else
+            return self == .changeSignature
+            #endif
+        }
     }
 
     /// True while the identity screen accepts only the recovery code.
     @Published private(set) var identityNeedsCode = false
 
-    var demoMode: Bool { profile?.demoMode ?? true }
+    var demoMode: Bool { profile?.demoMode ?? false }
+
+    private var restingScreen: Screen {
+        if blockReason != nil { return .blocked }
+        if profile == nil { return .enroll }
+        return .home
+    }
 
     init() {
-        do {
-            profile = try store.load()
-        } catch {
-            NSLog("AirSign: could not read profile: %@", error.localizedDescription)
-            say("Your AirSign profile could not be read. Enroll again; locked files still open with the recovery code.", .bad)
-        }
-        screen = profile == nil ? .enroll : .home
-        pairedMacCount = (try? store.pairedRecoveryKeys().count) ?? 0
+        retryLaunch()
         motion.onSample = { [weak self] sample in MainActor.assumeIsolated { self?.handle(sample) } }
         motion.onStatus = { [weak self] status in MainActor.assumeIsolated { self?.motionStatus = status } }
         motion.start()
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
+    }
+
+    func retryLaunch() {
+        profile = nil
+        blockReason = nil
+        saveBlocked = false
+        switch store.launchState() {
+        case .noProfile:
+            screen = .enroll
+            say("", .neutral)
+        case .ready(let loaded):
+            profile = loaded
+            screen = .home
+            say("", .neutral)
+        case .blocked(let reason):
+            block(reason)
+        }
+        pairedMacCount = (try? store.pairedRecoveryKeys().count) ?? 0
+    }
+
+    private func block(_ reason: BlockReason) {
+        stopCapture()
+        // Recovery unlock must work just as it does on a Mac with no profile.
+        profile = nil
+        saveBlocked = false
+        lockoutRemaining = nil
+        lastVerdict = nil
+        sampleCandidate = nil
+        blockReason = reason
+        screen = .blocked
+        say(Self.describe(reason), .bad)
     }
 
     // MARK: - Files
@@ -109,6 +163,11 @@ final class AppModel: ObservableObject {
     }
 
     func lock(_ urls: [URL]) {
+        guard blockReason == nil else {
+            screen = .blocked
+            say("AirSign can't lock files until its profile can be read again.", .bad)
+            return
+        }
         guard let profile else {
             screen = .enroll
             say("Enroll your signature first, then lock files.", .warn)
@@ -128,6 +187,8 @@ final class AppModel: ObservableObject {
                 }
             }
             say(lines.joined(separator: "\n"), failed ? .bad : .good)
+        } catch ProfileStoreError.keyMissing {
+            block(.keyMissing)
         } catch {
             say("Could not read AirSign's keys: \(error.localizedDescription)", .bad)
         }
@@ -139,7 +200,11 @@ final class AppModel: ObservableObject {
         lastVerdict = nil
         livePath = []
         screen = .unlock
-        say(profile == nil ? "This Mac has no AirSign signature. Use the recovery code." : "Press Space, sign, then hold still.", .neutral)
+        if blockReason != nil {
+            say("AirSign's profile can't be read. Use the recovery code.", .neutral)
+        } else {
+            say(profile == nil ? "This Mac has no AirSign signature. Use the recovery code." : "Press Space, sign, then hold still.", .neutral)
+        }
     }
 
     // MARK: - Capture
@@ -151,7 +216,7 @@ final class AppModel: ObservableObject {
             return
         }
         let countsTowardLockout = screen == .unlock || screen == .confirmIdentity
-        if countsTowardLockout, let remaining = profile?.lockout.remaining(now: Date()) {
+        if countsTowardLockout, let remaining = profile?.lockout.remaining(now: Date(), boot: BootClock.current()) {
             say("Too many tries. Wait \(Int(remaining.rounded(.up))) s.", .bad)
             return
         }
@@ -172,6 +237,7 @@ final class AppModel: ObservableObject {
             say("Changing the signature needs the recovery code: use “Use recovery code…”.", .warn)
             return
         }
+        #if AIRSIGN_LAB
         if screen == .lab, testTester.trimmingCharacters(in: .whitespaces).isEmpty {
             say("Type the tester's name first.", .warn)
             return
@@ -180,6 +246,7 @@ final class AppModel: ObservableObject {
             say("Type the owner's name first.", .warn)
             return
         }
+        #endif
         guard case .streaming = motionStatus else {
             say("No AirPod data. Pinch the AirPod so a finger covers its sensor, and keep the other one in the case.", .bad)
             return
@@ -220,7 +287,7 @@ final class AppModel: ObservableObject {
 
     private func tick() {
         motion.refreshStaleness()
-        let remaining = profile?.lockout.remaining(now: Date())
+        let remaining = profile?.lockout.remaining(now: Date(), boot: BootClock.current())
         if remaining != lockoutRemaining { lockoutRemaining = remaining }
         guard isCapturing else { return }
         let age = motion.lastSampleDate.map { Date().timeIntervalSince($0) } ?? .infinity
@@ -243,12 +310,23 @@ final class AppModel: ObservableObject {
             }
         case .unlock: verifyAndUnlock(signature)
         case .confirmIdentity: confirmIdentity(signature)
+        #if AIRSIGN_LAB
         case .lab: labVerify(signature, rows: rows)
-        case .home: break
+        #else
+        case .lab: break
+        #endif
+        case .home, .blocked: break
         }
     }
 
     // MARK: - Enrollment
+
+    func beginReset() {
+        cancelToHome()
+        isResetting = true
+        screen = .enroll
+        say("Sign 3 times the same way to enroll a new signature. Nothing is replaced until you confirm the new recovery code.", .neutral)
+    }
 
     private func addEnrollment(_ signature: Signature, rows: [MotionSample]) {
         if let first = enrolledSoFar.first, first.side != signature.side {
@@ -257,7 +335,9 @@ final class AppModel: ObservableObject {
         }
         if enrolledSoFar.isEmpty { enrollStrength = nil }
         enrolledSoFar.append(signature)
+        #if AIRSIGN_LAB
         enrolledRows.append(rows)
+        #endif
         guard enrolledSoFar.count >= MatcherConfig.enrollCount else {
             say("Got \(enrolledSoFar.count) of \(MatcherConfig.enrollCount). Sign again the same way.", .good)
             return
@@ -268,7 +348,9 @@ final class AppModel: ObservableObject {
     private func finishEnrollment() {
         guard let deviceUID = AudioDeviceIdentity.headphoneUID() else {
             enrolledSoFar.removeLast()
+            #if AIRSIGN_LAB
             enrolledRows.removeLast()
+            #endif
             say("Set the sound output to your AirPods (Control Center → Sound), then sign once more.", .bad)
             return
         }
@@ -321,11 +403,17 @@ final class AppModel: ObservableObject {
                 updated.enrollment = enrollment
                 updated.lockout.recordSuccess()
                 try save(updated)
+                #if AIRSIGN_LAB
                 logEnrollment(enrollment)
+                #endif
                 isReenrolling = false
                 clearEnrollment()
+                #if AIRSIGN_LAB
                 screen = returnToLabAfterEnroll ? .lab : .home
                 returnToLabAfterEnroll = false
+                #else
+                screen = .home
+                #endif
                 say("New signature saved. Your locked files open with it.", .good)
                 return
             }
@@ -335,6 +423,8 @@ final class AppModel: ObservableObject {
             pendingProfile = Profile(enrollment: enrollment, recoveryPublicKey: recoveryKey, lockout: Lockout(), demoMode: false)
             recoveryCodeToShow = code
             say("Write down your recovery code. Your signature is saved when you confirm.", .good)
+        } catch ProfileStoreError.keyMissing {
+            block(.keyMissing)
         } catch {
             clearEnrollment()
             say("Could not save the signature: \(error.localizedDescription). Start again.", .bad)
@@ -346,15 +436,25 @@ final class AppModel: ObservableObject {
         recoveryCodeToShow = nil
         pendingProfile = nil
         do {
-            try store.createProfile(pending)
+            try store.createProfile(pending, replacingExisting: isResetting)
             profile = pending
             pairedMacCount = 0
+            blockReason = nil
+            isResetting = false
         } catch {
+            isResetting = false
             clearEnrollment()
+            if case ProfileStoreError.keyMissing = error {
+                block(.keyMissing)
+                return
+            }
+            screen = restingScreen
             say("Could not save the signature: \(error.localizedDescription). Enroll again.", .bad)
             return
         }
+        #if AIRSIGN_LAB
         logEnrollment(pending.enrollment)
+        #endif
         clearEnrollment()
         screen = pendingUnlock.isEmpty ? .home : .unlock
         say(pendingUnlock.isEmpty ? "Right-click any file in Finder → Lock with AirSign." : "Now sign to unlock.", .neutral)
@@ -370,7 +470,9 @@ final class AppModel: ObservableObject {
 
     private func clearEnrollment() {
         enrolledSoFar = []
+        #if AIRSIGN_LAB
         enrolledRows = []
+        #endif
         pendingEnrollment = nil
         confirmations = 0
     }
@@ -392,11 +494,11 @@ final class AppModel: ObservableObject {
         lastVerdict = verdict
         sampleCandidate = verdict.canBecomeSample ? signature : nil
         guard verdict.accepted else {
-            adjustLockout(.failure)
+            guard adjustLockout(.failure) else { return }
             say(current.demoMode ? Self.describe(verdict) : "Not recognized.", .bad)
             return
         }
-        adjustLockout(.success)
+        guard adjustLockout(.success) else { return }
         do {
             let master = try store.masterKey()
             let paired = try store.pairedRecoveryKeys()
@@ -413,6 +515,8 @@ final class AppModel: ObservableObject {
                 : "Recognized" + (verdict.similarity.map { " (similarity \($0)%)" } ?? "") + "."
             let foreign = outcome.wrongKey.map { "\($0.lastPathComponent): locked on a Mac that isn't paired with this one. Use its recovery code." }
             report(heading: heading, outcome: outcome, extra: foreign, stayOnScreen: true)
+        } catch ProfileStoreError.keyMissing {
+            block(.keyMissing)
         } catch {
             say("Could not read AirSign's keys: \(error.localizedDescription)", .bad)
         }
@@ -420,7 +524,7 @@ final class AppModel: ObservableObject {
 
     /// `rememberOnThisMac` pairs this Mac with the one that locked the file, once the code has opened it.
     func submitRecoveryCode(_ code: String, rememberOnThisMac: Bool = false) {
-        if let remaining = profile?.lockout.remaining(now: Date()) {
+        if let remaining = profile?.lockout.remaining(now: Date(), boot: BootClock.current()) {
             say("Too many tries. Wait \(Int(remaining.rounded(.up))) s.", .bad)
             return
         }
@@ -429,23 +533,23 @@ final class AppModel: ObservableObject {
             return
         }
         guard (try? RecoveryCode.normalize(code)) != nil else {
-            adjustLockout(.failure)
+            guard adjustLockout(.failure) else { return }
             say("That is not a valid recovery code (32 characters).", .bad)
             return
         }
         if screen == .confirmIdentity {
             let key = try? RecoveryCode.privateKey(for: code).publicKey.rawRepresentation
             guard let key, key == profile?.recoveryPublicKey else {
-                adjustLockout(.failure)
+                guard adjustLockout(.failure) else { return }
                 say("Wrong recovery code.", .bad)
                 return
             }
-            adjustLockout(.success)
+            guard adjustLockout(.success) else { return }
             identityConfirmed()
             return
         }
         let outcome = unlockPending { try LockedFile.open($0, recoveryCode: code) }
-        adjustLockout(Lockout.recoveryEffect(restored: outcome.restored.count, wrongKey: outcome.wrongKey.count))
+        guard adjustLockout(Lockout.recoveryEffect(restored: outcome.restored.count, wrongKey: outcome.wrongKey.count)) else { return }
         var extra = outcome.wrongKey.map { "\($0.lastPathComponent): wrong recovery code." }
         if rememberOnThisMac, profile != nil, !outcome.restored.isEmpty {
             extra.append(pairThisMac(withCode: code))
@@ -471,7 +575,7 @@ final class AppModel: ObservableObject {
         guard var current = profile, let signature = sampleCandidate else { return }
         do {
             current.enrollment = try adding(signature, to: current.enrollment)
-            persist(current)
+            guard persist(current) else { return }
             sampleCandidate = nil
             let e = current.enrollment
             say("Added. AirSign now compares with \(e.templates.count) signatures (\(e.addedCount) added after unlocking); "
@@ -484,7 +588,7 @@ final class AppModel: ObservableObject {
     func removeAddedSamples() {
         guard var current = profile, current.enrollment.addedCount > 0 else { return }
         current.enrollment = removingAddedSamples(from: current.enrollment)
-        persist(current)
+        guard persist(current) else { return }
         say("Removed the added signatures; AirSign compares with your enrolled ones only.", .good)
     }
 
@@ -516,14 +620,23 @@ final class AppModel: ObservableObject {
         sampleCandidate = nil
         identityNeedsCode = false
         isReenrolling = false
+        isResetting = false
+        #if AIRSIGN_LAB
         returnToLabAfterEnroll = false
+        #endif
         clearEnrollment()
+        pendingProfile = nil
+        recoveryCodeToShow = nil
         enrollStrength = nil
         pendingUnlock = []
         lastVerdict = nil
         livePath = []
-        screen = profile == nil ? .enroll : .home
-        say("", .neutral)
+        screen = restingScreen
+        if let blockReason {
+            say(Self.describe(blockReason), .bad)
+        } else {
+            say("", .neutral)
+        }
     }
 
     private struct UnlockOutcome {
@@ -554,7 +667,7 @@ final class AppModel: ObservableObject {
         say(lines.joined(separator: "\n"), allDone ? .good : .bad)
         // In demo mode Finder would cover the signature the audience is looking at.
         if !outcome.restored.isEmpty, !demoMode { NSWorkspace.shared.activateFileViewerSelecting(outcome.restored) }
-        if allDone, !stayOnScreen { screen = profile == nil ? .enroll : .home }
+        if allDone, !stayOnScreen { screen = restingScreen }
     }
 
     /// A signature unlock that opened everything: the unlock screen now only shows the result.
@@ -568,10 +681,12 @@ final class AppModel: ObservableObject {
         beginIdentityCheck(.changeSignature, prompt: "Changing your signature needs your recovery code: press “Use recovery code…”.")
     }
 
+    #if AIRSIGN_LAB
     func beginLab() {
         guard testMode else { return }
         beginIdentityCheck(.openLab, prompt: "The owner opens the test lab: sign once, or use the recovery code.")
     }
+    #endif
 
     private func beginIdentityCheck(_ purpose: IdentityPurpose, prompt: String) {
         stopCapture()
@@ -595,10 +710,10 @@ final class AppModel: ObservableObject {
         if verdict.rejection == .deviceUnknown {
             say(Self.describe(verdict), .warn)
         } else if verdict.accepted {
-            adjustLockout(.success)
+            guard adjustLockout(.success) else { return }
             identityConfirmed()
         } else {
-            adjustLockout(.failure)
+            guard adjustLockout(.failure) else { return }
             say(current.demoMode ? Self.describe(verdict) : "Not recognized.", .bad)
         }
     }
@@ -607,18 +722,24 @@ final class AppModel: ObservableObject {
         identityNeedsCode = false
         switch identityPurpose {
         case .changeSignature:
-            startReenrollment(returningToLab: false)
+            #if AIRSIGN_LAB
+            returnToLabAfterEnroll = false
+            #endif
+            startReenrollment()
+        #if AIRSIGN_LAB
         case .changeSignatureFromLab:
-            startReenrollment(returningToLab: true)
+            returnToLabAfterEnroll = true
+            startReenrollment()
         case .openLab:
             lastVerdict = nil
             livePath = []
             screen = .lab
             say("Test lab open. Pick the tester and scenario, then press Space.", .good)
+        #endif
         case .enableDemo:
             if var current = profile {
                 current.demoMode = true
-                persist(current)
+                guard persist(current) else { return }
             }
             lastVerdict = nil
             livePath = []
@@ -627,9 +748,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func startReenrollment(returningToLab: Bool) {
+    private func startReenrollment() {
         isReenrolling = true
-        returnToLabAfterEnroll = returningToLab
         clearEnrollment()
         livePath = []
         lastVerdict = nil
@@ -637,6 +757,7 @@ final class AppModel: ObservableObject {
         say("Now sign your new signature 3 times.", .neutral)
     }
 
+    #if AIRSIGN_LAB
     // MARK: - Test lab (only with --test-mode)
 
     /// The owner re-enrolls from inside the lab so the templates' raw motion is logged too.
@@ -702,6 +823,7 @@ final class AppModel: ObservableObject {
     private func labKey(_ scenario: TestScenario) -> String {
         "\(testSession.rawValue)|\(testTester.trimmingCharacters(in: .whitespaces))|\(scenario.rawValue)"
     }
+    #endif
 
     // MARK: - Settings
 
@@ -713,16 +835,16 @@ final class AppModel: ObservableObject {
             return
         }
         current.demoMode = false
-        persist(current)
+        guard persist(current) else { return }
         thresholdOverride = nil
     }
 
     // MARK: - Helpers
 
-    private func adjustLockout(_ effect: Lockout.Effect) {
-        guard var current = profile else { return }
-        current.lockout.apply(effect, now: Date())
-        persist(current)
+    private func adjustLockout(_ effect: Lockout.Effect) -> Bool {
+        guard var current = profile else { return true }
+        current.lockout.apply(effect, now: Date(), boot: BootClock.current())
+        return persist(current)
     }
 
     private func save(_ updated: Profile) throws {
@@ -731,16 +853,20 @@ final class AppModel: ObservableObject {
     }
 
     /// Updates memory first so a failed write can't erase a failure count, then blocks attempts until saving works.
-    private func persist(_ updated: Profile) {
+    private func persist(_ updated: Profile) -> Bool {
         profile = updated
         do {
             try store.save(updated)
             saveBlocked = false
+            return true
+        } catch ProfileStoreError.keyMissing {
+            block(.keyMissing)
         } catch {
             saveBlocked = true
             NSLog("AirSign: could not save profile: %@", error.localizedDescription)
             say("Could not save AirSign settings, so unlocking is paused: \(error.localizedDescription)", .bad)
         }
+        return false
     }
 
     private func say(_ text: String, _ newTone: Tone) {
@@ -750,6 +876,17 @@ final class AppModel: ObservableObject {
 
     static func format(_ value: Double) -> String {
         String(format: "%.3f", value)
+    }
+
+    private static func describe(_ reason: BlockReason) -> String {
+        switch reason {
+        case .storeError:
+            return "AirSign couldn't read its keys from the Keychain. If macOS asked for permission and it was denied, choose Try again and allow it. Your locked files still open with the recovery code."
+        case .keyMissing:
+            return "AirSign's key is missing from the Keychain. Your locked files still open with the recovery code."
+        case .profileUnreadable:
+            return "AirSign's profile on this Mac can't be read. Your locked files still open with the recovery code."
+        }
     }
 
     static func describe(_ issue: StrengthIssue, _ m: SignatureMetrics) -> String {

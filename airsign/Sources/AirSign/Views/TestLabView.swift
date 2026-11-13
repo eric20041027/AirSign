@@ -1,3 +1,4 @@
+#if AIRSIGN_LAB
 import AirSignCore
 import AppKit
 import SwiftUI
@@ -44,14 +45,23 @@ enum TestSession: String, CaseIterable, Identifiable {
 }
 
 struct TestModeBanner: View {
+    @EnvironmentObject private var model: AppModel
+
     var body: some View {
-        Text("TEST MODE · Test-lab attempts are logged and never count toward the lockout · Unlocking files still uses it")
-            .font(.callout.bold())
-            .foregroundStyle(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.red))
+        VStack(alignment: .leading, spacing: 4) {
+            if model.testMode {
+                Text("TEST MODE · Test-lab attempts are logged and never count toward the lockout · Unlocking files still uses it")
+            }
+            if let path = model.sandboxPath {
+                Text("Sandbox data: \(path)")
+            }
+        }
+        .font(.callout.bold())
+        .foregroundStyle(.white)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.red))
     }
 }
 
@@ -115,3 +125,4 @@ struct TestLabView: View {
         }
     }
 }
+#endif
