@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/eric20041027/AirSign/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/eric20041027/AirSign/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111214?logo=apple&logoColor=white">
   <img alt="Swift" src="https://img.shields.io/badge/Swift-SwiftUI-1a5cff?logo=swift&logoColor=white">
   <img alt="No network code" src="https://img.shields.io/badge/network-none-111214">
@@ -128,6 +129,8 @@ scripts/install.sh       # builds, signs, installs to ~/Applications, registers 
 No Apple Development certificate? Run `AIRSIGN_ADHOC=1 scripts/install.sh` instead; macOS may then ask for your password after each rebuild.
 
 If the Finder items don't appear, enable them in System Settings → Keyboard → Keyboard Shortcuts → Services → Files and Folders.
+
+A build from 13 November 2026 or later treats a missing Keychain copy of the lockout as tampering and starts the longest cooldown, 4 hours, once. An install made by an older build that has never saved a lockout is in that state. Run `security find-generic-password -s com.makeuc.airsign -a lockout` to check whether the item exists. If it does not, unlocking one file with the old build before upgrading creates it.
 
 ## Quick start
 
