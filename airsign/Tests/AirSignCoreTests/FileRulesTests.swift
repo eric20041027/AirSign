@@ -76,6 +76,30 @@ struct FileRulesTests {
         #expect(fm.fileExists(atPath: f.trashDir.appendingPathComponent(first.lastPathComponent).path))
     }
 
+    @Test func aFailureEarlyInAnUnlockRunDoesNotStopTheItemsAfterIt() throws {
+        let f = Fixture(), fm = FileManager.default
+        defer { try? fm.removeItem(at: f.dir) }
+        let junk = f.file("junk.airsign", "junk")
+        let otherKey = try f.locker.lock(f.file("other.txt", "other"), masterKey: SymmetricKey(size: .bits256), recoveryPublicKey: f.pub)
+        let third = try f.locker.lock(f.file("a.txt", "alpha"), masterKey: f.master, recoveryPublicKey: f.pub)
+        let fourth = try f.locker.lock(f.file("b.txt", "beta"), masterKey: f.master, recoveryPublicKey: f.pub)
+        let locked = [junk, otherKey, third, fourth]
+        let expectedAttempts = try locked.map { try Data(contentsOf: $0) }
+        var attempts: [Data] = []
+        let outcome = UnlockRun.run(locked, locker: f.locker) {
+            attempts.append($0)
+            return try LockedFile.open($0, masterKey: f.master)
+        }
+
+        #expect(attempts == expectedAttempts)
+        #expect(outcome.failures.map(\.url) == [junk])
+        #expect(outcome.failures.first?.error as? LockedFileError == .notAirSignFile)
+        #expect(outcome.wrongKey == [otherKey])
+        #expect(outcome.restored == [f.dir.appendingPathComponent("a.txt"), f.dir.appendingPathComponent("b.txt")])
+        #expect(try outcome.restored.map { try Data(contentsOf: $0) } == [Data("alpha".utf8), Data("beta".utf8)])
+        #expect(!outcome.allDone)
+    }
+
     @Test func anUnlockRunWithNothingWrongIsAllDone() throws {
         let f = Fixture(), fm = FileManager.default
         defer { try? fm.removeItem(at: f.dir) }
@@ -88,6 +112,36 @@ struct FileRulesTests {
         #expect(outcome.allDone)
         #expect(outcome.wrongKey.isEmpty)
         #expect(outcome.failures.isEmpty)
+    }
+
+    @Test func aFailureEarlyInALockRunDoesNotStopTheItemsAfterIt() throws {
+        let f = Fixture(), fm = FileManager.default
+        defer { try? fm.removeItem(at: f.dir) }
+        let alreadyLocked = f.file("existing.airsign", "keep")
+        let file = f.file("a.txt", "alpha")
+        let folder = f.dir.appendingPathComponent("Docs")
+        try fm.createDirectory(at: folder, withIntermediateDirectories: false)
+        try Data("beta".utf8).write(to: folder.appendingPathComponent("b.txt"))
+        let outcome = LockRun.run([alreadyLocked, file, folder], locker: f.locker, masterKey: f.master, recoveryPublicKey: f.pub)
+
+        try #require(outcome.items.count == 3)
+        guard case .failed(let failure) = outcome.items[0],
+              case .locked(let second) = outcome.items[1],
+              case .locked(let third) = outcome.items[2] else {
+            Issue.record("Expected a failure followed by two locked items.")
+            return
+        }
+        #expect(failure.url == alreadyLocked)
+        #expect(failure.error as? FileLockerError == .alreadyLocked)
+        #expect(second.source == file)
+        #expect(third.source == folder)
+        #expect(outcome.anyFailed)
+        let openedFile = try LockedFile.open(Data(contentsOf: second.locked), masterKey: f.master)
+        let openedFolder = try LockedFile.open(Data(contentsOf: third.locked), masterKey: f.master)
+        #expect(openedFile.name == "a.txt")
+        #expect(openedFile.plaintext == Data("alpha".utf8))
+        #expect(openedFolder.name == "Docs")
+        #expect(!openedFolder.plaintext.isEmpty)
     }
 
     @Test func aLockRunReportsEachItemInOrder() throws {
