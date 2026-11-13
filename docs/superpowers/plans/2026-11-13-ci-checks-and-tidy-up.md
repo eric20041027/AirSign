@@ -60,7 +60,7 @@ What the script does, in this order (the spec fixes the order and the meaning; t
 |---|---|---|
 | 1 | Build debug with tests, release, lab release; any warning fails | `-Xswiftc -warnings-as-errors` on all three. Debug uses the default scratch path with `--build-tests --enable-code-coverage`; release uses `--scratch-path .build/check-default`; lab release adds `-Xswiftc -DAIRSIGN_LAB` and uses `--scratch-path .build/check-lab` |
 | 2 | Tests with coverage | one `swift test --enable-code-coverage` run with the same flags as the debug build, output kept in a log. With `--with-test-volume` the image is created and mounted first and the run has `AIRSIGN_TEST_VOLUME` set |
-| 3 | Test count and skips | the number in `Test run with N tests` equals the one number before ` unit tests` in `README.md` (exactly one such place, else fail). Names in `Test <name>() skipped.` lines: `roundTwoOwnerVersusImitatorAUC` is allowed only when `spikes/airpods-motion/sessions` does not exist; `lockAndUnlockWorkOnAVolumeWithoutExclusiveRename` only without `--with-test-volume`; nothing else |
+| 3 | Test count and skips | the number in `Test run with N tests` equals the one number before ` unit tests` in `README.md` (exactly one such place, else fail). Every line in which Swift Testing says a test or a suite was skipped counts, whatever follows the word (`skipped.` or `skipped: "reason"`). Skipped test names: `roundTwoOwnerVersusImitatorAUC` is allowed only when `spikes/airpods-motion/sessions` does not exist; `lockAndUnlockWorkOnAVolumeWithoutExclusiveRename` only without `--with-test-volume`; nothing else |
 | 4 | `AirSignCore` line coverage at least 85% | `xcrun llvm-cov report` on the test binary and `default.profdata`, restricted to `Sources/AirSignCore`; print covered, total and percent. The floor is one constant at the top of the script |
 | 5 | Default and lab app bundles | `AIRSIGN_SIGN_ID=-` and `AIRSIGN_APP=<work dir>/…/AirSign.app`, calling `build-app.sh` twice with `AIRSIGN_SWIFT_ARGS` set so it reuses check 1's two release builds. `strings` on `Contents/MacOS/AirSign`: none of `--test-mode`, `--probe`, `--selftest-keychain` in the default binary, all three in the lab binary. Nothing is launched |
 | 6 | No machine paths | `git grep` over tracked files, excluding `docs/superpowers`, for the two strings the spec names. The script builds the pattern from pieces so that it does not match itself |
@@ -68,7 +68,7 @@ What the script does, in this order (the spec fixes the order and the meaning; t
 Requirements the mechanism serves; if a command does not behave as the table assumes, change the command, keep the requirement, and say so in the report:
 - A warning fails the script on every run until it is fixed (Review Focus 1).
 - No configuration is compiled twice in one run.
-- Everything the script creates outside `.build` lives in one `mktemp -d` folder that an exit trap removes; the same trap detaches the image if it is mounted. With `--with-test-volume`, a failure to create or mount is `check failed: test volume`.
+- Everything the script creates outside `.build` lives in one `mktemp -d` folder named `airsign-check.XXXXXX` that an exit trap removes; the same trap detaches the image if it is mounted. With `--with-test-volume`, a failure to create or mount is `check failed: test volume`.
 - The script works from any current directory and never writes to `airsign/build`.
 
 - [ ] **Step 1: `build-app.sh` options.** Read `AIRSIGN_APP` and `AIRSIGN_SWIFT_ARGS` as described. Refuse, before removing anything, an `AIRSIGN_APP` whose last path component does not end in `.app`. With neither variable set the script behaves exactly as now.
@@ -87,7 +87,7 @@ Expected: six `==>` lines, a coverage line close to `94.8%`, `All checks passed.
 
 - [ ] **Step 5: Run it with the volume, and look at what it left.**
 
-Run: `shasum airsign/build/AirSign.app/Contents/MacOS/AirSign > /tmp/before.sum 2>/dev/null; airsign/scripts/check.sh --with-test-volume; echo "exit=$?"; hdiutil info | grep -c AIRSIGNCHK; shasum airsign/build/AirSign.app/Contents/MacOS/AirSign | diff - /tmp/before.sum && echo "app untouched"`
+Run: `shasum airsign/build/AirSign.app/Contents/MacOS/AirSign > /tmp/before.sum 2>/dev/null; airsign/scripts/check.sh --with-test-volume; echo "exit=$?"; hdiutil info | grep -c airsign-check; shasum airsign/build/AirSign.app/Contents/MacOS/AirSign | diff - /tmp/before.sum && echo "app untouched"`
 Expected: `exit=0`; the test log shows `lockAndUnlockWorkOnAVolumeWithoutExclusiveRename` passed, not skipped; `0` volumes still attached; `app untouched` (when a built app exists).
 
 - [ ] **Step 6: Make each check fail once.** One at a time, make the change, run the script, confirm the message, undo the change (`git checkout -- <file>`), and confirm `git status --short` is clean at the end.
@@ -99,7 +99,7 @@ Expected: `exit=0`; the test log shows `lockAndUnlockWorkOnAVolumeWithoutExclusi
 | add `.disabled("x")` to `@Test func successResetsFailures` | `check failed: skipped tests` |
 | set the coverage floor constant to `99` | `check failed: coverage` |
 | append a line containing the first of the two machine-path strings to `CONTRIBUTING.md` | `check failed: machine paths` |
-| press Ctrl-C (or `kill -INT`) during the tests of a `--with-test-volume` run | non-zero exit, and `hdiutil info \| grep -c AIRSIGNCHK` prints `0` |
+| press Ctrl-C (or `kill -INT`) during the tests of a `--with-test-volume` run | non-zero exit, and `hdiutil info \| grep -c airsign-check` prints `0` |
 
 - [ ] **Step 7: Commit.**
 
