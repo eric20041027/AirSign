@@ -1,6 +1,8 @@
 import Foundation
 import Testing
-@testable import AirSignCore
+import AirSignCore
+import AirSignLab
+import AirSignTestSupport
 
 @Test func attemptLogWritesSpikeCompatibleJSON() throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

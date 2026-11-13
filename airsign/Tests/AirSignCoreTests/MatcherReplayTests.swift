@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import AirSignCore
+import AirSignTestSupport
 
 // Real recordings from the spike stay out of git (biometric-like data), so this test
 // only runs on a machine that has them.

@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 import Testing
 @testable import AirSignCore
+import AirSignTestSupport
 
 @Test func fiveFailuresLockForFiveMinutesThenExpire() {
     var l = Lockout()

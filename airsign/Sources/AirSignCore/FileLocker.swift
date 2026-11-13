@@ -4,7 +4,6 @@ import Foundation
 
 public enum FileLockerError: Error, Equatable {
     case alreadyLocked
-    case isDirectory
     case tooLarge
     case unreadable
     case notLocked

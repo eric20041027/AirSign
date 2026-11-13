@@ -2,6 +2,9 @@ import AirSignCore
 import AppKit
 import CryptoKit
 import Foundation
+#if AIRSIGN_LAB
+import AirSignLab
+#endif
 
 enum Tone {
     case neutral, good, warn, bad
@@ -927,7 +930,6 @@ final class AppModel: ObservableObject {
     private static func describe(_ error: Error) -> String {
         switch error {
         case FileLockerError.alreadyLocked: return "already locked"
-        case FileLockerError.isDirectory: return "folders can't be locked yet"
         case FileLockerError.tooLarge: return "larger than 500 MB"
         case FileLockerError.unreadable: return "can't be read"
         case FileLockerError.notLocked: return "not an .airsign file"

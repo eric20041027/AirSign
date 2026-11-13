@@ -42,7 +42,9 @@ An item-not-found error is fine when the sandbox never created that item. `AIRSI
 | Path | What it is |
 |---|---|
 | `airsign/Sources/AirSignCore` | Pure logic with no UI: matcher, crypto, file format, lockout. Tested with Swift Testing in `airsign/Tests/AirSignCoreTests` |
+| `airsign/Sources/AirSignLab` | The test lab's plaintext attempt log; only lab builds use it. Tested in `airsign/Tests/AirSignLabTests` |
 | `airsign/Sources/AirSign` | The SwiftUI app: motion input, AirPods identity, Keychain, Finder Services, views |
+| `airsign/Tests/AirSignTestSupport` | Helpers shared by the test targets |
 | `tools/tuning` | Python port of the matcher for research. Tests: `cd tools/tuning && python3 -m unittest` (needs numpy) |
 | `archive/makeuc-2026` | Hackathon records; not maintained |
 

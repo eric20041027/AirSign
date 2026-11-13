@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import AirSignCore
+import AirSignTestSupport
 
 private func verdict(score: Double, threshold: Double = 1, rejection: Rejection? = nil) -> Verdict {
     Verdict(accepted: rejection == nil, score: score, threshold: threshold, rejection: rejection, lights: [])

@@ -1,5 +1,6 @@
 #if AIRSIGN_LAB
 import AirSignCore
+import AirSignLab
 import AppKit
 import SwiftUI
 

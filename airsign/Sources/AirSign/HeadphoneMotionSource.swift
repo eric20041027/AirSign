@@ -46,10 +46,6 @@ final class HeadphoneMotionSource: NSObject, CMHeadphoneMotionManagerDelegate {
         }
     }
 
-    func stop() {
-        manager.stopDeviceMotionUpdates()
-    }
-
     /// Call periodically: no samples for a second means the AirPod left the ear or the finger left the sensor.
     func refreshStaleness(now: Date = Date()) {
         guard case .streaming = status, let last = lastSampleDate, now.timeIntervalSince(last) > 1 else { return }
