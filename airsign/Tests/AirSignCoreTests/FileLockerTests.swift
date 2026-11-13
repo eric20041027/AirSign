@@ -48,6 +48,50 @@ private struct Stop: Error {}
     #expect(try String(contentsOf: restoredOdd, encoding: .utf8) == "mine")
 }
 
+@Test func aRestoredFolderNamedLikeAPartialSurvivesTheNextUnlock() throws {
+    let f = Fixture(), fm = FileManager.default
+    let odd = ".airsign-partial-\(UUID().uuidString)"
+    let folder = f.dir.appendingPathComponent(odd)
+    try fm.createDirectory(at: folder, withIntermediateDirectories: false)
+    let bytes = Data("mine".utf8)
+    try bytes.write(to: folder.appendingPathComponent("a.txt"))
+    let locked = try f.locker.lock(folder, masterKey: f.master, recoveryPublicKey: f.pub)
+    let restored = try f.locker.unlock(locked) { try LockedFile.open($0, masterKey: f.master) }
+    #expect(restored.lastPathComponent == String(odd.dropFirst()))
+    #expect(try Data(contentsOf: restored.appendingPathComponent("a.txt")) == bytes)
+    let other = try f.locker.lock(f.file("b.txt", "beta"), masterKey: f.master, recoveryPublicKey: f.pub)
+    _ = try f.locker.unlock(other) { try LockedFile.open($0, masterKey: f.master) }
+    #expect(fm.fileExists(atPath: restored.path))
+    #expect(try Data(contentsOf: restored.appendingPathComponent("a.txt")) == bytes)
+}
+
+@Test func aNameCollisionNeverGivesARestoredItemAPartialName() throws {
+    for isFolder in [false, true] {
+        let f = Fixture(), fm = FileManager.default
+        let odd = ".airsign-partial-\(UUID().uuidString)"
+        let name = String(odd.dropFirst())
+        let source = f.dir.appendingPathComponent(odd), existing = f.dir.appendingPathComponent(name)
+        if isFolder { try fm.createDirectory(at: source, withIntermediateDirectories: false) }
+        let bytes = Data("mine".utf8), existingBytes = Data("theirs".utf8)
+        try bytes.write(to: isFolder ? source.appendingPathComponent("a.txt") : source)
+        let locked = try f.locker.lock(source, masterKey: f.master, recoveryPublicKey: f.pub)
+        if isFolder { try fm.createDirectory(at: existing, withIntermediateDirectories: false) }
+        let existingContents = isFolder ? existing.appendingPathComponent("a.txt") : existing
+        try existingBytes.write(to: existingContents)
+        let restored = try f.locker.unlock(locked) { try LockedFile.open($0, masterKey: f.master) }
+        #expect(restored.lastPathComponent == "\(name) (unlocked)")
+        #expect(!Scratch.isPartialName(restored.lastPathComponent))
+        let restoredContents = isFolder ? restored.appendingPathComponent("a.txt") : restored
+        #expect(try Data(contentsOf: restoredContents) == bytes)
+        #expect(try Data(contentsOf: existingContents) == existingBytes)
+        let other = try f.locker.lock(f.file("b.txt", "beta"), masterKey: f.master, recoveryPublicKey: f.pub)
+        _ = try f.locker.unlock(other) { try LockedFile.open($0, masterKey: f.master) }
+        #expect(fm.fileExists(atPath: restored.path) && fm.fileExists(atPath: existing.path))
+        #expect(try Data(contentsOf: restoredContents) == bytes)
+        #expect(try Data(contentsOf: existingContents) == existingBytes)
+    }
+}
+
 @Test func restoredFileAppearsUnderItsNameOnlyWhenComplete() throws {
     let f = Fixture(), fm = FileManager.default
     let locked = try f.locker.lock(f.file("a.txt", "alpha"), masterKey: f.master, recoveryPublicKey: f.pub)

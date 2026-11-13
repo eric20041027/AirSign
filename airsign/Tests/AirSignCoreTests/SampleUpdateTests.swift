@@ -1,13 +1,14 @@
 import Foundation
 import Testing
 @testable import AirSignCore
+import AirSignTestSupport
 
 private func enrolled() throws -> Enrollment {
     try enroll((0..<3).map { _ in Signature(samples: strokes(ownerShape, noise: 0.25)) }, deviceUID: "UID-A")
 }
 
 /// The owner's signature a few hours later: bigger and a little shifted.
-private let driftedShape: (Double) -> SIMD3<Double> = { u in ownerShape(u) * 1.3 + SIMD3(0.4, 0, 0) }
+private let driftedShape: @Sendable (Double) -> SIMD3<Double> = { u in ownerShape(u) * 1.3 + SIMD3(0.4, 0, 0) }
 
 @Test func addingASampleNeverLoosensThePassMark() throws {
     let e = try enrolled()

@@ -1,5 +1,6 @@
 import Foundation
 @testable import AirSignCore
+import AirSignTestSupport
 
 /// One 50 Hz sample spinning about x at `speed` rad/s.
 func sample(_ i: Int, speed: Double, side: BudSide = .right) -> MotionSample {
@@ -11,22 +12,7 @@ func run(_ r: inout SignatureRecorder, _ samples: [MotionSample]) -> [RecorderEv
     samples.map { r.feed($0) }
 }
 
-/// A synthetic signature: `shape(u)` is the gyro reading at progress u in [0, 1).
-func strokes(_ shape: (Double) -> SIMD3<Double>, n: Int = 110, noise: Double = 0, side: BudSide = .right) -> [MotionSample] {
-    var g = SystemRandomNumberGenerator()
-    return (0..<n).map { i in
-        let u = Double(i) / Double(n)
-        let j = { Double.random(in: -noise...noise, using: &g) }
-        let r = shape(u) + SIMD3(j(), j(), j())
-        return MotionSample(t: Double(i) * 0.02, quat: SIMD4(0, 0, 0, 1), rot: r, acc: r * 0.05,
-                            grav: SIMD3(0, 0.7, -0.7), side: side)
-    }
-}
-
-let ownerShape: (Double) -> SIMD3<Double> = { u in
-    SIMD3(3 * sin(4 * .pi * u), 2 * cos(6 * .pi * u) + 0.8, 1.5 * sin(2 * .pi * u) + 1)
-}
-let forgeryShape: (Double) -> SIMD3<Double> = { u in
+let forgeryShape: @Sendable (Double) -> SIMD3<Double> = { u in
     SIMD3(3 * sin(4 * .pi * u + 0.9), 2 * cos(4 * .pi * u) + 0.8, 1.5 * sin(3 * .pi * u) + 1)
 }
 

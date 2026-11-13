@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 
 public struct Profile: Codable, Equatable {
@@ -39,6 +40,19 @@ public enum LaunchState: Equatable {
     }
 }
 
+public enum PairedMacs: Equatable, Sendable {
+    case readable(count: Int)
+    case unreadable
+
+    /// There is something to remove, or what is there can't be read.
+    public var canForget: Bool {
+        switch self {
+        case .readable(let count): return count > 0
+        case .unreadable: return true
+        }
+    }
+}
+
 /// Keeps the enrolled signatures and settings on this Mac only, encrypted at rest with a
 /// key held in the secret store. Also owns the master key that wraps every file's data key.
 public struct ProfileStore {
@@ -50,10 +64,16 @@ public struct ProfileStore {
 
     private let directory: URL
     private let secrets: SecretStore
+    private let willReplaceProfile: (URL) throws -> Void
 
     public init(directory: URL, secrets: SecretStore) {
+        self.init(directory: directory, secrets: secrets, willReplaceProfile: { _ in })
+    }
+
+    init(directory: URL, secrets: SecretStore, willReplaceProfile: @escaping (_ staged: URL) throws -> Void) {
         self.directory = directory
         self.secrets = secrets
+        self.willReplaceProfile = willReplaceProfile
     }
 
     /// ~/Library/Application Support/AirSign
@@ -144,8 +164,21 @@ public struct ProfileStore {
             throw CocoaError(.fileWriteUnknown)
         }
         let url = directory.appendingPathComponent(Self.fileName)
-        try sealed.write(to: url, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        let staged = directory.appendingPathComponent(".\(Self.fileName).\(UUID().uuidString).staged")
+        let descriptor = Darwin.open(staged.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard descriptor >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        let output = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        do {
+            guard fchmod(descriptor, 0o600) == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+            try output.write(contentsOf: sealed)
+            try output.close()
+            try willReplaceProfile(staged)
+            guard rename(staged.path, url.path) == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        } catch {
+            try? output.close()
+            _ = unlink(staged.path)
+            throw error
+        }
     }
 
     /// First enrollment on this Mac, or an explicit reset: a fresh master key,
@@ -169,6 +202,12 @@ public struct ProfileStore {
     }
 
     // MARK: - Paired Macs
+
+    /// Never throws: a Keychain error or stored bytes that are not keys are `.unreadable`.
+    public func pairedMacs() -> PairedMacs {
+        do { return .readable(count: try pairedRecoveryKeys().count) }
+        catch { return .unreadable }
+    }
 
     /// Recovery keys of the owner's other Macs. Files locked there open here after this Mac's signature check.
     public func pairedRecoveryKeys() throws -> [Curve25519.KeyAgreement.PrivateKey] {

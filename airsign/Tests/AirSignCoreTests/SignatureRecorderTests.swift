@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import AirSignCore
+import AirSignTestSupport
 
 private func finished(_ events: [RecorderEvent]) -> [[MotionSample]] {
     events.compactMap { if case .finished(let s) = $0 { s } else { nil } }

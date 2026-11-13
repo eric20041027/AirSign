@@ -10,9 +10,10 @@ enum MotionStatus: Equatable {
 }
 
 /// Streams AirPods motion as `MotionSample`s on the main thread.
+@MainActor
 final class HeadphoneMotionSource: NSObject, CMHeadphoneMotionManagerDelegate {
-    var onSample: ((MotionSample) -> Void)?
-    var onStatus: ((MotionStatus) -> Void)?
+    var onSample: (@MainActor (MotionSample) -> Void)?
+    var onStatus: (@MainActor (MotionStatus) -> Void)?
     private(set) var lastSampleDate: Date?
     private(set) var status: MotionStatus = .waitingForAirPods
 
@@ -34,20 +35,16 @@ final class HeadphoneMotionSource: NSObject, CMHeadphoneMotionManagerDelegate {
         }
         manager.delegate = self
         report(.waitingForAirPods)
-        manager.startDeviceMotionUpdates(to: queue) { [weak self] motion, error in
+        manager.startDeviceMotionUpdates(to: queue) { @Sendable [weak self] motion, error in
             if let error {
                 NSLog("AirSign: headphone motion error: %@", error.localizedDescription)
-                DispatchQueue.main.async { if Self.isDenied { self?.report(.denied) } }
+                DispatchQueue.main.async { [weak self] in if Self.isDenied { self?.report(.denied) } }
                 return
             }
             guard let motion else { return }
             let sample = Self.sample(from: motion)
-            DispatchQueue.main.async { self?.deliver(sample) }
+            DispatchQueue.main.async { [weak self] in self?.deliver(sample) }
         }
-    }
-
-    func stop() {
-        manager.stopDeviceMotionUpdates()
     }
 
     /// Call periodically: no samples for a second means the AirPod left the ear or the finger left the sensor.
@@ -56,15 +53,15 @@ final class HeadphoneMotionSource: NSObject, CMHeadphoneMotionManagerDelegate {
         report(.waitingForAirPods)
     }
 
-    func headphoneMotionManagerDidDisconnect(_ manager: CMHeadphoneMotionManager) {
+    nonisolated func headphoneMotionManagerDidDisconnect(_ manager: CMHeadphoneMotionManager) {
         DispatchQueue.main.async { self.report(.waitingForAirPods) }
     }
 
-    func headphoneMotionManagerDidConnect(_ manager: CMHeadphoneMotionManager) {}
+    nonisolated func headphoneMotionManagerDidConnect(_ manager: CMHeadphoneMotionManager) {}
 
     // MARK: - Private
 
-    private static var isDenied: Bool {
+    private nonisolated static var isDenied: Bool {
         let auth = CMHeadphoneMotionManager.authorizationStatus()
         return auth == .denied || auth == .restricted
     }
@@ -80,7 +77,7 @@ final class HeadphoneMotionSource: NSObject, CMHeadphoneMotionManagerDelegate {
         onStatus?(newStatus)
     }
 
-    private static func sample(from motion: CMDeviceMotion) -> MotionSample {
+    private nonisolated static func sample(from motion: CMDeviceMotion) -> MotionSample {
         let q = motion.attitude.quaternion, r = motion.rotationRate, a = motion.userAcceleration, g = motion.gravity
         let side: BudSide
         switch motion.sensorLocation {

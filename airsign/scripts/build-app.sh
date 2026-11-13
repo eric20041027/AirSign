@@ -4,13 +4,20 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP=build/AirSign.app
+APP="${AIRSIGN_APP:-build/AirSign.app}"
+if [[ "$(basename "$APP")" != *.app ]]; then
+  echo "AIRSIGN_APP must end in .app" >&2
+  exit 1
+fi
+
 EXTRA=()
 if [[ "${AIRSIGN_LAB:-0}" == "1" ]]; then
   EXTRA=(-Xswiftc -DAIRSIGN_LAB)
 fi
-swift build -c release --product AirSign ${EXTRA[@]+"${EXTRA[@]}"}
-BIN_DIR="$(swift build -c release --show-bin-path ${EXTRA[@]+"${EXTRA[@]}"})"
+SWIFT_ARGS=()
+IFS=' ' read -r -a SWIFT_ARGS <<< "${AIRSIGN_SWIFT_ARGS:-}"
+swift build -c release --product AirSign ${EXTRA[@]+"${EXTRA[@]}"} ${SWIFT_ARGS[@]+"${SWIFT_ARGS[@]}"}
+BIN_DIR="$(swift build -c release --show-bin-path ${EXTRA[@]+"${EXTRA[@]}"} ${SWIFT_ARGS[@]+"${SWIFT_ARGS[@]}"})"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

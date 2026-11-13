@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import AirSignCore
+import AirSignTestSupport
 
 @Test func dtwOfIdenticalIsZeroAndStretchIsSmall() {
     let a = Signature(samples: strokes(ownerShape)).features

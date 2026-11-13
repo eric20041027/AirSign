@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/eric20041027/AirSign/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/eric20041027/AirSign/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111214?logo=apple&logoColor=white">
   <img alt="Swift" src="https://img.shields.io/badge/Swift-SwiftUI-1a5cff?logo=swift&logoColor=white">
   <img alt="No network code" src="https://img.shields.io/badge/network-none-111214">
@@ -129,6 +130,8 @@ No Apple Development certificate? Run `AIRSIGN_ADHOC=1 scripts/install.sh` inste
 
 If the Finder items don't appear, enable them in System Settings → Keyboard → Keyboard Shortcuts → Services → Files and Folders.
 
+A build from 13 November 2026 or later treats a missing Keychain copy of the lockout as tampering and starts the longest cooldown, 4 hours, once. An install made by an older build that has never saved a lockout is in that state. Run `security find-generic-password -s com.makeuc.airsign -a lockout` to check whether the item exists. If it does not, unlocking one file with the old build before upgrading creates it.
+
 ## Quick start
 
 1. **Enroll.** Open AirSign, hold one AirPod as described below, press Space, sign in the air for about 2 seconds, then hold still. Sign 3 times, then 3 more times as a check. Write down the recovery code before you click *I wrote it down*: it is shown only once.
@@ -189,7 +192,7 @@ A restart followed by a clock change also ends a cooldown. If AirSign is force-q
 
 ## Under the hood
 
-- **Swift + SwiftUI** app with Finder Services menu items; core logic in a tested `AirSignCore` library (107 unit tests).
+- **Swift + SwiftUI** app with Finder Services menu items; core logic in a tested `AirSignCore` library; the package has 116 unit tests.
 - **CoreMotion** `CMHeadphoneMotionManager` streams the AirPod's attitude, rotation rate, acceleration and gravity (we measured 50 Hz on AirPods Pro 3 and 25 Hz on AirPods 4).
 - **Matcher:** 9 features per sample, banded DTW (25% band), a duration penalty, the minimum distance to the enrolled templates.
 - **CryptoKit** for AES-GCM and HPKE; the **Keychain** for the master key and a copy of the lockout counter.

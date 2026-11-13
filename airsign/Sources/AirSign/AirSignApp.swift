@@ -45,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Finder → right-click → "Lock with AirSign" / "Unlock with AirSign" (declared under NSServices in Info.plist).
     private func registerFinderServices() {
         let provider = ServicesProvider { [weak self] urls in
-            MainActor.assumeIsolated { self?.model.handleOpen(urls) }
+            self?.model.handleOpen(urls)
         }
         services = provider
         NSApp.servicesProvider = provider

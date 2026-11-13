@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import AirSignCore
+import AirSignTestSupport
 
 @Test func turningIsGyroSpeedIntegratedOverTime() {
     let s = Signature(samples: strokes({ _ in SIMD3(2, 0, 0) }, n: 101))

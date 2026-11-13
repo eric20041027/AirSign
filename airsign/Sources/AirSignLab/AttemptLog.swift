@@ -1,3 +1,4 @@
+import AirSignCore
 import CryptoKit
 import Foundation
 

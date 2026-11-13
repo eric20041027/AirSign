@@ -1,10 +1,11 @@
 import AppKit
 import Foundation
 
+@MainActor
 final class ServicesProvider: NSObject {
-    var onFiles: (([URL]) -> Void)?
+    var onFiles: (@MainActor ([URL]) -> Void)?
 
-    init(onFiles: (([URL]) -> Void)? = nil) {
+    init(onFiles: (@MainActor ([URL]) -> Void)? = nil) {
         self.onFiles = onFiles
         super.init()
     }

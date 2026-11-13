@@ -35,9 +35,14 @@ struct SettingsView: View {
                 StrengthMeter(strength: strength, isEnrolling: false)
             }
             HStack {
-                Text("Paired Macs: \(model.pairedMacCount)").foregroundStyle(.secondary)
+                switch model.pairedMacs {
+                case .readable(let count):
+                    Text("Paired Macs: \(count)").foregroundStyle(.secondary)
+                case .unreadable:
+                    Text("Paired Macs can't be read; Forget paired Macs removes them.").foregroundStyle(.secondary)
+                }
                 Button("Forget paired Macs") { model.forgetPairedMacs() }
-                    .disabled(model.pairedMacCount == 0)
+                    .disabled(!model.pairedMacs.canForget)
             }
             Button("Change signature…") { model.beginChangeSignature() }
         }

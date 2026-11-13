@@ -2,6 +2,9 @@ import AirSignCore
 import AppKit
 import CryptoKit
 import Foundation
+#if AIRSIGN_LAB
+import AirSignLab
+#endif
 
 enum Tone {
     case neutral, good, warn, bad
@@ -43,7 +46,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var lockoutRemaining: TimeInterval?
     /// Set while the profile can't be written: attempts are refused so the lockout can't be dodged.
     @Published private(set) var saveBlocked = false
-    @Published private(set) var pairedMacCount = 0
+    @Published private(set) var pairedMacs: PairedMacs = .readable(count: 0)
     @Published var thresholdOverride: Double?
 
     #if AIRSIGN_LAB
@@ -111,8 +114,8 @@ final class AppModel: ObservableObject {
 
     init() {
         retryLaunch()
-        motion.onSample = { [weak self] sample in MainActor.assumeIsolated { self?.handle(sample) } }
-        motion.onStatus = { [weak self] status in MainActor.assumeIsolated { self?.motionStatus = status } }
+        motion.onSample = { [weak self] sample in self?.handle(sample) }
+        motion.onStatus = { [weak self] status in self?.motionStatus = status }
         motion.start()
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -134,7 +137,7 @@ final class AppModel: ObservableObject {
         case .blocked(let reason):
             block(reason)
         }
-        pairedMacCount = (try? store.pairedRecoveryKeys().count) ?? 0
+        pairedMacs = store.pairedMacs()
     }
 
     private func block(_ reason: BlockReason) {
@@ -438,7 +441,7 @@ final class AppModel: ObservableObject {
         do {
             try store.createProfile(pending, replacingExisting: isResetting)
             profile = pending
-            pairedMacCount = 0
+            pairedMacs = .readable(count: 0)
             blockReason = nil
             isResetting = false
         } catch {
@@ -559,9 +562,11 @@ final class AppModel: ObservableObject {
 
     /// Only a Mac with its own enrolled signature can be paired; a public Mac just uses the code once.
     private func pairThisMac(withCode code: String) -> String {
+        defer { pairedMacs = store.pairedMacs() }
         do {
             let added = try store.addPairedRecoveryKey(RecoveryCode.privateKey(for: code))
-            pairedMacCount = try store.pairedRecoveryKeys().count
+            // A failed read after adding must still report a pairing error.
+            _ = try store.pairedRecoveryKeys()
             return added
                 ? "Paired: files from that Mac now open here with your AirPods and signature."
                 : "This Mac was already paired with that one."
@@ -595,7 +600,7 @@ final class AppModel: ObservableObject {
     func forgetPairedMacs() {
         do {
             try store.forgetPairedMacs()
-            pairedMacCount = 0
+            pairedMacs = .readable(count: 0)
             say("Forgot all paired Macs. Their files open here only with their recovery codes.", .good)
         } catch {
             say("Could not forget paired Macs: \(error.localizedDescription)", .bad)
@@ -927,7 +932,6 @@ final class AppModel: ObservableObject {
     private static func describe(_ error: Error) -> String {
         switch error {
         case FileLockerError.alreadyLocked: return "already locked"
-        case FileLockerError.isDirectory: return "folders can't be locked yet"
         case FileLockerError.tooLarge: return "larger than 500 MB"
         case FileLockerError.unreadable: return "can't be read"
         case FileLockerError.notLocked: return "not an .airsign file"
