@@ -65,7 +65,7 @@ public struct Lockout: Codable, Equatable {
             seconds = lockedFor - (boot.uptime - lockedUptime)
         } else {
             let wallRemaining = until.timeIntervalSince(now)
-            seconds = lockedFor.map { min(wallRemaining, $0) } ?? wallRemaining
+            seconds = min(wallRemaining, lockedFor ?? Self.cooldowns[Self.cooldowns.count - 1])
         }
         return seconds > 0 ? seconds : nil
     }

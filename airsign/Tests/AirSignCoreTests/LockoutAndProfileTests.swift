@@ -179,6 +179,16 @@ private func locked(at time: Date, boot: BootClock?) -> Lockout {
     #expect(l.remaining(now: Date(timeIntervalSinceReferenceDate: 900), boot: bootA) == 100)
 }
 
+@Test func aLockoutSavedByAnOlderBuildNeverLastsLongerThanTheLongestCooldown() throws {
+    let l = try JSONDecoder().decode(Lockout.self, from: Data(#"{"failures":0,"lockCount":1,"lockedUntil":1000}"#.utf8))
+    let setBackADay = Date(timeIntervalSinceReferenceDate: 1000 - 86_400 - 300)
+    #expect(l.remaining(now: setBackADay, boot: bootA) == 14_400)
+    #expect(l.remaining(now: setBackADay) == 14_400)
+    let anchored = l.reanchored(now: setBackADay, boot: bootA)
+    #expect(anchored.lockedFor == 14_400 && anchored.remaining(now: setBackADay, boot: bootA) == 14_400)
+    #expect(l.remaining(now: Date(timeIntervalSinceReferenceDate: 900), boot: bootA) == 100)   // an honest record is unchanged
+}
+
 @Test func lockoutRoundTripsThroughJSONWithItsBootFields() throws {
     let l = locked(at: t0, boot: bootA)
     #expect(try JSONDecoder().decode(Lockout.self, from: JSONEncoder().encode(l)) == l)
@@ -407,6 +417,25 @@ private func locked(at time: Date, boot: BootClock?) -> Lockout {
     secrets.failingSaves = []
     try store.createProfile(fresh, replacingExisting: true)
     #expect(store.launchState() == .ready(fresh))
+}
+
+@Test func aResetWhoseProfileWriteFailsStaysBlockedAndCanBeRunAgain() throws {
+    struct Stop: Error {}
+    let dir = tempDir(), secrets = InMemorySecretStore()
+    let store = ProfileStore(directory: dir, secrets: secrets)
+    let old = try testProfile("UID-A"), fresh = try testProfile("UID-B")
+    try store.createProfile(old)
+    let file = dir.appendingPathComponent("profile.bin")
+    let before = try Data(contentsOf: file)
+    let master = try #require(try secrets.load("master-key"))
+    let failing = ProfileStore(directory: dir, secrets: secrets) { _ in throw Stop() }
+    #expect(throws: Stop.self) { try failing.createProfile(fresh, replacingExisting: true) }
+    let plain = ProfileStore(directory: dir, secrets: secrets)
+    if case .blocked = plain.launchState() {} else { Issue.record("a half-finished reset must leave the app blocked") }
+    #expect(try Data(contentsOf: file) == before)
+    try plain.createProfile(fresh, replacingExisting: true)
+    #expect(plain.launchState() == .ready(fresh))
+    #expect(try secrets.load("master-key") != master)
 }
 
 @Test func aMissingKeychainLockoutCopyStartsTheLongestCooldownOnce() throws {
