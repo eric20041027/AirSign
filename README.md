@@ -185,11 +185,11 @@ Errors saying an item or domain doesn't exist are fine: not every install create
 
 **Encryption in short:** each file is sealed with its own 256-bit AES-GCM key; the header is authenticated with the content. That key is wrapped twice: with a master key in the login Keychain, and with HPKE (X25519, ChaCha20-Poly1305) to a public key derived from your recovery code. Turn on FileVault and empty the Trash after locking to get the full protection.
 
-A restart followed by a clock change also ends a cooldown. If AirSign is force-quit while restoring, a hidden plaintext `.airsign-partial-…` item can stay next to the locked file until AirSign next unlocks something in that folder.
+A restart followed by a clock change also ends a cooldown. If AirSign is force-quit while restoring, a hidden plaintext `.airsign-partial-…` item can stay next to the locked file until AirSign next unlocks something in that folder. On a drive that cannot rename without replacing, such as exFAT or FAT, a single restored file is written straight to its final name, so a force-quit during the copy can leave an incomplete file under that name while the locked file stays and nothing is overwritten.
 
 ## Under the hood
 
-- **Swift + SwiftUI** app with Finder Services menu items; core logic in a tested `AirSignCore` library (97 unit tests).
+- **Swift + SwiftUI** app with Finder Services menu items; core logic in a tested `AirSignCore` library (107 unit tests).
 - **CoreMotion** `CMHeadphoneMotionManager` streams the AirPod's attitude, rotation rate, acceleration and gravity (we measured 50 Hz on AirPods Pro 3 and 25 Hz on AirPods 4).
 - **Matcher:** 9 features per sample, banded DTW (25% band), a duration penalty, the minimum distance to the enrolled templates.
 - **CryptoKit** for AES-GCM and HPKE; the **Keychain** for the master key and a copy of the lockout counter.

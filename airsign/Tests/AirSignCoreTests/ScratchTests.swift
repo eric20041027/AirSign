@@ -2,6 +2,42 @@ import Foundation
 import Testing
 @testable import AirSignCore
 
+@Test func aFailedCleanUpKeepsTheMarkerSoALaterSweepFinishesIt() throws {
+    let fm = FileManager.default
+    let base = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try fm.createDirectory(at: base, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: base) }
+    let folder = try ScratchFolder(in: base, prefix: Scratch.partialPrefix)
+    let payload = folder.url.appendingPathComponent("payload")
+    try Data("plain".utf8).write(to: payload)
+    struct Stop: Error {}
+    #expect(folder.remove(removingItem: { _ in throw Stop() }) == false)
+    #expect(fm.fileExists(atPath: folder.url.appendingPathComponent(".airsign-owner").path))
+    #expect(fm.fileExists(atPath: payload.path))
+    #expect(Scratch.sweepPartials(in: base) == 1)
+    #expect(!fm.fileExists(atPath: folder.url.path))
+}
+
+@Test func cleanUpRemovesTheMarkerItselfAndLast() throws {
+    let fm = FileManager.default
+    let base = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try fm.createDirectory(at: base, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: base) }
+    let folder = try ScratchFolder(in: base)
+    try Data("zip".utf8).write(to: folder.url.appendingPathComponent("folder.zip"))
+    try fm.createDirectory(at: folder.url.appendingPathComponent("out/inner"), withIntermediateDirectories: true)
+    var handed: [String] = [], markerWasThere: [Bool] = []
+    let marker = folder.url.appendingPathComponent(".airsign-owner").path
+    #expect(folder.remove(removingItem: {
+        handed.append($0.lastPathComponent)
+        markerWasThere.append(fm.fileExists(atPath: marker))
+        try fm.removeItem(at: $0)
+    }))
+    #expect(handed.sorted() == ["folder.zip", "out"])
+    #expect(markerWasThere == [true, true])
+    #expect(!fm.fileExists(atPath: folder.url.path))
+}
+
 @Test func sweepRemovesOnlyFoldersAirSignOwnsAndIsNotUsing() throws {
     let fm = FileManager.default
     let base = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)

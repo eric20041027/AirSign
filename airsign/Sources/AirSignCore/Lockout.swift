@@ -102,8 +102,16 @@ public struct Lockout: Codable, Equatable {
 
     /// The stricter of two copies, so putting an older copy back never loosens anything.
     public static func mostRestrictive(_ a: Lockout, _ b: Lockout, now: Date, boot: BootClock?) -> Lockout {
-        let aRemaining = a.remaining(now: now, boot: boot) ?? 0
-        let bRemaining = b.remaining(now: now, boot: boot) ?? 0
+        var aRemaining = a.remaining(now: now, boot: boot) ?? 0
+        var bRemaining = b.remaining(now: now, boot: boot) ?? 0
+        // A current-boot anchor supersedes a copy saved before this boot.
+        if let session = boot?.session, let aBoot = a.lockedBootSession, let bBoot = b.lockedBootSession {
+            if a.lockedUntil != nil, aBoot == session, bBoot != session {
+                bRemaining = 0
+            } else if b.lockedUntil != nil, bBoot == session, aBoot != session {
+                aRemaining = 0
+            }
+        }
         var merged = Lockout()
         if aRemaining > 0 || bRemaining > 0 {
             merged = aRemaining >= bRemaining ? a : b

@@ -49,7 +49,7 @@ public struct FileLocker {
             }
             try trash(url)
         } catch {
-            if createdOutput { try? FileManager.default.removeItem(at: target) }
+            if createdOutput { _ = unlink(target.path) }
             throw (error as? FileLockerError) ?? FileLockerError.writeFailed(error.localizedDescription)
         }
         return target
@@ -92,15 +92,68 @@ public struct FileLocker {
 
     // MARK: - Private
 
-    static func publish(_ source: URL, to target: URL) throws {
-        guard renamex_np(source.path, target.path, UInt32(RENAME_EXCL)) != 0 else { return }
-        let failure = errno
-        // Some filesystems do not implement exclusive rename.
-        if failure == ENOTSUP {
-            try FileManager.default.moveItem(at: source, to: target)
-        } else {
-            throw FileLockerError.writeFailed(NSError(domain: NSPOSIXErrorDomain, code: Int(failure)).localizedDescription)
+    /// Moves `source` to `target` and never replaces what is at `target`.
+    static func publish(_ source: URL, to target: URL,
+                        exclusiveRename: (_ from: String, _ to: String) -> Int32 = FileLocker.exclusiveRename) throws {
+        let failure = exclusiveRename(source.path, target.path)
+        guard failure != 0 else { return }
+        guard failure == ENOTSUP else { throw publicationError(failure) }
+        var info = stat()
+        guard lstat(source.path, &info) == 0 else { throw publicationError(errno) }
+        switch info.st_mode & S_IFMT {
+        case S_IFDIR: try publishFolder(source, to: target)
+        case S_IFREG: try publishFile(source, to: target, permissions: info.st_mode & 0o7777)
+        default: throw publicationError(ENOTSUP)
         }
+    }
+
+    /// 0, or the errno of `renamex_np(from, to, RENAME_EXCL)`.
+    static func exclusiveRename(_ from: String, _ to: String) -> Int32 {
+        renamex_np(from, to, UInt32(RENAME_EXCL)) == 0 ? 0 : errno
+    }
+
+    private static func publishFolder(_ source: URL, to target: URL) throws {
+        guard mkdir(target.path, 0o700) == 0 else { throw publicationError(errno) }
+        guard rename(source.path, target.path) == 0 else {
+            let failure = errno
+            _ = rmdir(target.path)
+            throw publicationError(failure)
+        }
+    }
+
+    private static func publishFile(_ source: URL, to target: URL, permissions: mode_t) throws {
+        let descriptor = Darwin.open(target.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, permissions)
+        guard descriptor >= 0 else { throw publicationError(errno) }
+        defer { close(descriptor) }
+        do {
+            try copyBytes(from: source, to: descriptor)
+            // Preserve the source mode even when the umask restricted the create.
+            guard fchmod(descriptor, permissions) == 0 else { throw publicationError(errno) }
+        } catch {
+            removePublishedFile(target, descriptor: descriptor)
+            throw (error as? FileLockerError) ?? FileLockerError.writeFailed(error.localizedDescription)
+        }
+        _ = unlink(source.path)
+    }
+
+    private static func copyBytes(from source: URL, to descriptor: Int32) throws {
+        let input = try FileHandle(forReadingFrom: source)
+        defer { try? input.close() }
+        let output = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
+        while let chunk = try input.read(upToCount: 64 * 1024), !chunk.isEmpty {
+            try output.write(contentsOf: chunk)
+        }
+    }
+
+    private static func removePublishedFile(_ target: URL, descriptor: Int32) {
+        var created = stat(), current = stat()
+        guard fstat(descriptor, &created) == 0, lstat(target.path, &current) == 0,
+              created.st_dev == current.st_dev, created.st_ino == current.st_ino else { return }
+        _ = unlink(target.path)
+    }
+
+    private static func publicationError(_ code: Int32) -> FileLockerError {
+        .writeFailed(NSError(domain: NSPOSIXErrorDomain, code: Int(code)).localizedDescription)
     }
 
     private static func isFolder(_ url: URL) throws -> Bool {

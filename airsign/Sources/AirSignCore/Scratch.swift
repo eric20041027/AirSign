@@ -19,7 +19,7 @@ final class ScratchFolder {
             guard markerFD >= 0 else { throw Self.posixError() }
             guard flock(markerFD, LOCK_EX) == 0 else { throw Self.posixError() }
             // A sweep must never see the marker before its lock is held.
-            try FileLocker.publish(url.appendingPathComponent(pending), to: url.appendingPathComponent(Self.markerName))
+            guard renameat(directoryFD, pending, directoryFD, Self.markerName) == 0 else { throw Self.posixError() }
         } catch {
             if directoryIsUnchanged { try? FileManager.default.removeItem(at: url) }
             release()
@@ -48,7 +48,7 @@ final class ScratchFolder {
         return ScratchFolder(url: url, directoryFD: directory, markerFD: marker)
     }
 
-    @discardableResult func remove() -> Bool {
+    @discardableResult func remove(removingItem: (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) }) -> Bool {
         defer { release() }
         var opened = stat(), current = stat()
         // A replacement at the same path is not ours.
@@ -58,8 +58,16 @@ final class ScratchFolder {
               current.st_mode & S_IFMT == S_IFREG,
               opened.st_dev == current.st_dev, opened.st_ino == current.st_ino else { return false }
         do {
-            try FileManager.default.removeItem(at: url)
-            return true
+            let fm = FileManager.default
+            let entries = try fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
+            for entry in entries where entry.lastPathComponent != Self.markerName {
+                try removingItem(entry)
+            }
+            // Failed or incomplete cleanup must remain sweepable.
+            let remaining = try fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
+            guard remaining.allSatisfy({ $0.lastPathComponent == Self.markerName }), directoryIsUnchanged,
+                  unlinkat(directoryFD, Self.markerName, 0) == 0 else { return false }
+            return rmdir(url.path) == 0
         } catch {
             return false
         }

@@ -195,6 +195,54 @@ private func locked(at time: Date, boot: BootClock?) -> Lockout {
     }
 }
 
+@Test func aCopyFromBeforeTheRestartCannotRestartOrReviveTheCooldown() {
+    let old = locked(at: t0, boot: bootA)
+    let back = t0.addingTimeInterval(-86_400)
+    let current = old.reanchored(now: back, boot: BootClock(session: "B", uptime: 5))
+    let later = BootClock(session: "B", uptime: 105)
+    for merged in [Lockout.mostRestrictive(old, current, now: back, boot: later),
+                   .mostRestrictive(current, old, now: back, boot: later)] {
+        #expect(merged.remaining(now: back, boot: later) == 200)
+        #expect(merged.reanchored(now: back, boot: later) == merged)
+        #expect(merged.lockCount == 1)
+    }
+    let over = BootClock(session: "B", uptime: 306)
+    for merged in [Lockout.mostRestrictive(old, current, now: back, boot: over),
+                   .mostRestrictive(current, old, now: back, boot: over)] {
+        #expect(merged.remaining(now: back, boot: over) == nil)
+        #expect(merged.reanchored(now: back, boot: over).remaining(now: back, boot: over) == nil)
+        #expect(merged.lockCount == 1)
+    }
+    // The missing-copy penalty still beats a copy from before the restart.
+    #expect(Lockout.mostRestrictive(old, .tampered(now: back, boot: later), now: back, boot: later)
+        .remaining(now: back, boot: later) == 14_400)
+    // A copy with no boot session cannot be proved older, so time left still decides.
+    let unanchored = locked(at: t0, boot: nil)
+    #expect(Lockout.mostRestrictive(unanchored, current, now: back, boot: later).remaining(now: back, boot: later) == 300)
+}
+
+@Test func puttingBackAProfileFromBeforeTheRestartCannotRestartTheCooldown() throws {
+    let dir = tempDir()
+    let store = ProfileStore(directory: dir, secrets: InMemorySecretStore())
+    var p = try testProfile()
+    try store.createProfile(p)
+    p.lockout = locked(at: t0, boot: bootA)
+    try store.save(p)
+    let file = dir.appendingPathComponent("profile.bin")
+    let beforeRestart = try Data(contentsOf: file)
+    let back = t0.addingTimeInterval(-86_400)
+    let first = BootClock(session: "B", uptime: 5)
+    #expect(try store.load(now: back, boot: first)?.lockout.remaining(now: back, boot: first) == 300)
+    for uptime in [105.0, 205.0] {
+        try beforeRestart.write(to: file)
+        let boot = BootClock(session: "B", uptime: uptime)
+        #expect(try store.load(now: back, boot: boot)?.lockout.remaining(now: back, boot: boot) == 305 - uptime)
+    }
+    try beforeRestart.write(to: file)
+    let over = BootClock(session: "B", uptime: 306)
+    #expect(try store.load(now: back, boot: over)?.lockout.remaining(now: back, boot: over) == nil)
+}
+
 @Test func mergingPicksTheCooldownWithMoreTimeLeftNotTheLaterWallDate() {
     let stale = locked(at: t0, boot: bootA)                      // ends at t0 + 300, over by uptime 1300
     let back = t0.addingTimeInterval(-86_400)                    // the clock is then set back a day
