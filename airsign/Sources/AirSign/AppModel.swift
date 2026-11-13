@@ -91,13 +91,15 @@ final class AppModel: ObservableObject {
         case changeSignatureFromLab, openLab
         #endif
 
-        /// One lucky imitation must not be enough to replace the owner's signature.
-        var needsRecoveryCode: Bool {
+        var action: SensitiveAction {
+            switch self {
+            case .changeSignature: return .changeSignature
+            case .enableDemo: return .enableDemo
             #if AIRSIGN_LAB
-            return self == .changeSignature || self == .changeSignatureFromLab
-            #else
-            return self == .changeSignature
+            case .changeSignatureFromLab: return .changeSignature
+            case .openLab: return .openLab
             #endif
+            }
         }
     }
 
@@ -217,47 +219,54 @@ final class AppModel: ObservableObject {
             return
         }
         let countsTowardLockout = screen == .unlock || screen == .confirmIdentity
-        if countsTowardLockout, let remaining = profile?.lockout.remaining(now: Date(), boot: BootClock.current()) {
-            say("Too many tries. Wait \(Int(remaining.rounded(.up))) s.", .bad)
+        if countsTowardLockout,
+           let refusal = AttemptGate.refusal(lockout: profile?.lockout, saveBlocked: saveBlocked, now: Date(), boot: BootClock.current()) {
+            switch refusal {
+            case .coolingDown(let remaining):
+                say("Too many tries. Wait \(Int(remaining.rounded(.up))) s.", .bad)
+            case .cannotSave:
+                say("AirSign can't save its settings, so unlocking is paused. Check the AirSign folder in Application Support.", .bad)
+            }
             return
         }
-        if countsTowardLockout, saveBlocked {
-            say("AirSign can't save its settings, so unlocking is paused. Check the AirSign folder in Application Support.", .bad)
-            return
-        }
-        if screen == .enroll, AudioDeviceIdentity.headphoneUID() == nil {
-            say("Set the sound output to your AirPods (Control Center → Sound), then enroll.", .bad)
-            return
-        }
-        // No signing at all without the enrolled AirPods as output, so no score can leak from an uncounted try.
-        if screen != .enroll, profile?.enrollment.deviceUID != nil, AudioDeviceIdentity.headphoneUID() == nil {
-            say("Set the sound output to your AirPods (Control Center → Sound), then sign.", .bad)
-            return
-        }
-        if screen == .confirmIdentity, identityNeedsCode {
-            say("Changing the signature needs the recovery code: use “Use recovery code…”.", .warn)
-            return
-        }
-        #if AIRSIGN_LAB
-        if screen == .lab, testTester.trimmingCharacters(in: .whitespaces).isEmpty {
-            say("Type the tester's name first.", .warn)
-            return
-        }
-        if screen == .lab, testOwner.trimmingCharacters(in: .whitespaces).isEmpty {
-            say("Type the owner's name first.", .warn)
-            return
-        }
-        #endif
-        guard case .streaming = motionStatus else {
-            say("No AirPod data. Pinch the AirPod so a finger covers its sensor, and keep the other one in the case.", .bad)
-            return
-        }
+        guard canStartCapture() else { return }
         recorder.reset()
         signingSamples = []
         livePath = []
         lastVerdict = nil
         isCapturing = true
         say("Ready. Start signing, then hold still.", .neutral)
+    }
+
+    private func canStartCapture() -> Bool {
+        if screen == .enroll, AudioDeviceIdentity.headphoneUID() == nil {
+            say("Set the sound output to your AirPods (Control Center → Sound), then enroll.", .bad)
+            return false
+        }
+        // No signing at all without the enrolled AirPods as output, so no score can leak from an uncounted try.
+        if screen != .enroll, profile?.enrollment.deviceUID != nil, AudioDeviceIdentity.headphoneUID() == nil {
+            say("Set the sound output to your AirPods (Control Center → Sound), then sign.", .bad)
+            return false
+        }
+        if screen == .confirmIdentity, identityNeedsCode {
+            say("Changing the signature needs the recovery code: use “Use recovery code…”.", .warn)
+            return false
+        }
+        #if AIRSIGN_LAB
+        if screen == .lab, testTester.trimmingCharacters(in: .whitespaces).isEmpty {
+            say("Type the tester's name first.", .warn)
+            return false
+        }
+        if screen == .lab, testOwner.trimmingCharacters(in: .whitespaces).isEmpty {
+            say("Type the owner's name first.", .warn)
+            return false
+        }
+        #endif
+        guard case .streaming = motionStatus else {
+            say("No AirPod data. Pinch the AirPod so a finger covers its sensor, and keep the other one in the case.", .bad)
+            return false
+        }
+        return true
     }
 
     private func stopCapture() {
@@ -487,36 +496,27 @@ final class AppModel: ObservableObject {
         }
         let verdict = verify(signature, deviceUID: AudioDeviceIdentity.headphoneUID(), against: current.enrollment,
                              threshold: thresholdOverride)
-        if verdict.rejection == .deviceUnknown {
-            lastVerdict = nil
-            say(Self.describe(verdict), .warn)
-            return
+        lastVerdict = verdict.rejection == .deviceUnknown ? nil : verdict
+        if verdict.rejection != .deviceUnknown {
+            sampleCandidate = verdict.canBecomeSample ? signature : nil
         }
-        lastVerdict = verdict
-        sampleCandidate = verdict.canBecomeSample ? signature : nil
-        guard verdict.accepted else {
-            guard adjustLockout(.failure) else { return }
-            say(current.demoMode ? Self.describe(verdict) : "Not recognized.", .bad)
-            return
-        }
-        guard adjustLockout(.success) else { return }
         do {
-            let master = try store.masterKey()
-            let paired = try store.pairedRecoveryKeys()
-            let keys = UnlockKeys(master: master, paired: paired)
-            let outcome = unlockPending(open: keys.open)
-            if outcome.restored.isEmpty, outcome.failures.isEmpty, !outcome.wrongKey.isEmpty {
-                say("Your signature matched, but this file was locked on a Mac that isn't paired with this one. "
-                    + "Use that Mac's recovery code once and tick “Remember on this Mac”: after that, your AirPods "
-                    + "and signature open its files here too.", .warn)
-                return
+            let step = try UnlockAttempt.signature(verdict, count: adjustLockout) {
+                let master = try store.masterKey()
+                let paired = try store.pairedRecoveryKeys()
+                let keys = UnlockKeys(master: master, paired: paired)
+                return unlockPending(open: keys.open)
             }
-            // Outside demo mode the similarity shows only after a pass, so it can't guide an imitator.
-            let heading = current.demoMode
-                ? Self.describe(verdict)
-                : "Recognized" + (verdict.similarity.map { " (similarity \($0)%)" } ?? "") + "."
-            let foreign = outcome.wrongKey.map { "\($0.lastPathComponent): locked on a Mac that isn't paired with this one. Use its recovery code." }
-            report(heading: heading, outcome: outcome, extra: foreign, stayOnScreen: true)
+            switch step {
+            case .notCounted:
+                say(Self.describe(verdict), .warn)
+            case .rejected:
+                say(current.demoMode ? Self.describe(verdict) : "Not recognized.", .bad)
+            case .countNotSaved:
+                return
+            case .opened(let outcome):
+                reportSignatureUnlock(outcome, verdict: verdict, demoMode: current.demoMode)
+            }
         } catch ProfileStoreError.keyMissing {
             block(.keyMissing)
         } catch {
@@ -524,36 +524,53 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// `rememberOnThisMac` pairs this Mac with the one that locked the file, once the code has opened it.
-    func submitRecoveryCode(_ code: String, rememberOnThisMac: Bool = false) {
-        if let remaining = profile?.lockout.remaining(now: Date(), boot: BootClock.current()) {
-            say("Too many tries. Wait \(Int(remaining.rounded(.up))) s.", .bad)
+    private func reportSignatureUnlock(_ outcome: UnlockOutcome, verdict: Verdict, demoMode: Bool) {
+        if outcome.restored.isEmpty, outcome.failures.isEmpty, !outcome.wrongKey.isEmpty {
+            say("Your signature matched, but this file was locked on a Mac that isn't paired with this one. "
+                + "Use that Mac's recovery code once and tick “Remember on this Mac”: after that, your AirPods "
+                + "and signature open its files here too.", .warn)
             return
         }
-        if saveBlocked {
-            say("AirSign can't save its settings, so unlocking is paused.", .bad)
+        // Outside demo mode the similarity shows only after a pass, so it can't guide an imitator.
+        let heading = demoMode
+            ? Self.describe(verdict)
+            : "Recognized" + (verdict.similarity.map { " (similarity \($0)%)" } ?? "") + "."
+        let foreign = outcome.wrongKey.map { "\($0.lastPathComponent): locked on a Mac that isn't paired with this one. Use its recovery code." }
+        report(heading: heading, outcome: outcome, extra: foreign, stayOnScreen: true)
+    }
+
+    /// `rememberOnThisMac` pairs this Mac with the one that locked the file, once the code has opened it.
+    func submitRecoveryCode(_ code: String, rememberOnThisMac: Bool = false) {
+        if let refusal = AttemptGate.refusal(lockout: profile?.lockout, saveBlocked: saveBlocked, now: Date(), boot: BootClock.current()) {
+            switch refusal {
+            case .coolingDown(let remaining):
+                say("Too many tries. Wait \(Int(remaining.rounded(.up))) s.", .bad)
+            case .cannotSave:
+                say("AirSign can't save its settings, so unlocking is paused.", .bad)
+            }
             return
         }
         guard (try? RecoveryCode.normalize(code)) != nil else {
-            guard adjustLockout(.failure) else { return }
+            guard adjustLockout(AttemptResult.malformedCode.lockoutEffect) else { return }
             say("That is not a valid recovery code (32 characters).", .bad)
             return
         }
         if screen == .confirmIdentity {
-            let key = try? RecoveryCode.privateKey(for: code).publicKey.rawRepresentation
-            guard let key, key == profile?.recoveryPublicKey else {
-                guard adjustLockout(.failure) else { return }
+            let matches = IdentityCheck.codeMatches(code, recoveryPublicKey: profile?.recoveryPublicKey)
+            guard adjustLockout(AttemptResult.identityCode(matches: matches).lockoutEffect) else { return }
+            guard matches else {
                 say("Wrong recovery code.", .bad)
                 return
             }
-            guard adjustLockout(.success) else { return }
             identityConfirmed()
             return
         }
-        let outcome = unlockPending { try LockedFile.open($0, recoveryCode: code) }
-        guard adjustLockout(Lockout.recoveryEffect(restored: outcome.restored.count, wrongKey: outcome.wrongKey.count)) else { return }
+        let step = UnlockAttempt.recoveryCode(openFiles: {
+            unlockPending { try LockedFile.open($0, recoveryCode: code) }
+        }, count: adjustLockout)
+        guard case .counted(let outcome) = step else { return }
         var extra = outcome.wrongKey.map { "\($0.lastPathComponent): wrong recovery code." }
-        if rememberOnThisMac, profile != nil, !outcome.restored.isEmpty {
+        if PairingRule.shouldPair(requested: rememberOnThisMac, hasProfile: profile != nil, restored: outcome.restored.count) {
             extra.append(pairThisMac(withCode: code))
         }
         report(heading: "Recovery code", outcome: outcome, extra: extra)
@@ -667,7 +684,7 @@ final class AppModel: ObservableObject {
     private func beginIdentityCheck(_ purpose: IdentityPurpose, prompt: String) {
         stopCapture()
         identityPurpose = purpose
-        identityNeedsCode = purpose.needsRecoveryCode
+        identityNeedsCode = purpose.action.needsRecoveryCode
         lastVerdict = nil
         livePath = []
         screen = .confirmIdentity
@@ -685,11 +702,12 @@ final class AppModel: ObservableObject {
         lastVerdict = verdict.rejection == .deviceUnknown ? nil : verdict
         if verdict.rejection == .deviceUnknown {
             say(Self.describe(verdict), .warn)
-        } else if verdict.accepted {
-            guard adjustLockout(.success) else { return }
+            return
+        }
+        guard adjustLockout(AttemptResult.signature(verdict).lockoutEffect) else { return }
+        if verdict.accepted {
             identityConfirmed()
         } else {
-            guard adjustLockout(.failure) else { return }
             say(current.demoMode ? Self.describe(verdict) : "Not recognized.", .bad)
         }
     }
