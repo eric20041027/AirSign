@@ -157,12 +157,11 @@ final class AppModel: ObservableObject {
 
     /// Finder and `open -a AirSign` land here: `.airsign` files unlock, everything else locks.
     func handleOpen(_ urls: [URL]) {
-        let locked = urls.filter { $0.pathExtension.lowercased() == FileLocker.lockedExtension }
-        let plain = urls.filter { $0.pathExtension.lowercased() != FileLocker.lockedExtension }
-        if !plain.isEmpty { lock(plain) }
-        if !locked.isEmpty { beginUnlock(locked) }
+        let routed = OpenRouting.route(urls)
+        if !routed.toLock.isEmpty { lock(routed.toLock) }
+        if !routed.toUnlock.isEmpty { beginUnlock(routed.toUnlock) }
         // Locking needs no signature, so Finder keeps the focus; the app comes forward only to sign or to show a problem.
-        if !locked.isEmpty || tone == .bad || tone == .warn { NSApp.activate() }
+        if !routed.toUnlock.isEmpty || tone == .bad || tone == .warn { NSApp.activate() }
     }
 
     func lock(_ urls: [URL]) {
@@ -179,17 +178,16 @@ final class AppModel: ObservableObject {
         do {
             let master = try store.masterKey()
             let recoveryKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: profile.recoveryPublicKey)
-            var failed = false
-            let lines = urls.map { url -> String in
-                do {
-                    let out = try FileLocker().lock(url, masterKey: master, recoveryPublicKey: recoveryKey)
-                    return "Locked \(url.lastPathComponent) → \(out.lastPathComponent) (original moved to the Trash)"
-                } catch {
-                    failed = true
-                    return "\(url.lastPathComponent): \(Self.describe(error))"
+            let outcome = LockRun.run(urls, locker: FileLocker(), masterKey: master, recoveryPublicKey: recoveryKey)
+            let lines = outcome.items.map { item -> String in
+                switch item {
+                case .locked(let locked):
+                    return "Locked \(locked.source.lastPathComponent) → \(locked.locked.lastPathComponent) (original moved to the Trash)"
+                case .failed(let failure):
+                    return "\(failure.url.lastPathComponent): \(Self.describe(failure.error))"
                 }
             }
-            say(lines.joined(separator: "\n"), failed ? .bad : .good)
+            say(lines.joined(separator: "\n"), outcome.anyFailed ? .bad : .good)
         } catch ProfileStoreError.keyMissing {
             block(.keyMissing)
         } catch {
@@ -505,8 +503,9 @@ final class AppModel: ObservableObject {
         do {
             let master = try store.masterKey()
             let paired = try store.pairedRecoveryKeys()
-            let outcome = unlockPending { try Self.openWithThisMacsKeys($0, master: master, paired: paired) }
-            if outcome.restored.isEmpty, outcome.errors.isEmpty, !outcome.wrongKey.isEmpty {
+            let keys = UnlockKeys(master: master, paired: paired)
+            let outcome = unlockPending(open: keys.open)
+            if outcome.restored.isEmpty, outcome.failures.isEmpty, !outcome.wrongKey.isEmpty {
                 say("Your signature matched, but this file was locked on a Mac that isn't paired with this one. "
                     + "Use that Mac's recovery code once and tick “Remember on this Mac”: after that, your AirPods "
                     + "and signature open its files here too.", .warn)
@@ -607,19 +606,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// This Mac's master key first, then the keys of Macs the owner paired with this one.
-    private static func openWithThisMacsKeys(_ data: Data, master: SymmetricKey,
-                                             paired: [Curve25519.KeyAgreement.PrivateKey]) throws -> (name: String, plaintext: Data) {
-        do {
-            return try LockedFile.open(data, masterKey: master)
-        } catch LockedFileError.authenticationFailed {
-            for key in paired {
-                if let opened = try? LockedFile.open(data, recoveryPrivateKey: key) { return opened }
-            }
-            throw LockedFileError.authenticationFailed
-        }
-    }
-
     func cancelToHome() {
         stopCapture()
         sampleCandidate = nil
@@ -644,35 +630,20 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private struct UnlockOutcome {
-        var restored: [URL] = []
-        var wrongKey: [URL] = []
-        var errors: [String] = []
-    }
-
     private func unlockPending(open: (Data) throws -> (name: String, plaintext: Data)) -> UnlockOutcome {
-        var outcome = UnlockOutcome()
-        for url in pendingUnlock {
-            do {
-                outcome.restored.append(try FileLocker().unlock(url, open: open))
-            } catch LockedFileError.authenticationFailed {
-                outcome.wrongKey.append(url)
-            } catch {
-                outcome.errors.append("\(url.lastPathComponent): \(Self.describe(error))")
-            }
-        }
+        let outcome = UnlockRun.run(pendingUnlock, locker: FileLocker(), open: open)
         pendingUnlock = outcome.wrongKey
         return outcome
     }
 
     /// `stayOnScreen` keeps a signature unlock on its result, so the signature can still be turned and shown.
     private func report(heading: String, outcome: UnlockOutcome, extra: [String], stayOnScreen: Bool = false) {
-        let lines = [heading] + outcome.restored.map { "Unlocked \($0.lastPathComponent)" } + extra + outcome.errors
-        let allDone = outcome.wrongKey.isEmpty && outcome.errors.isEmpty
-        say(lines.joined(separator: "\n"), allDone ? .good : .bad)
+        let errors = outcome.failures.map { "\($0.url.lastPathComponent): \(Self.describe($0.error))" }
+        let lines = [heading] + outcome.restored.map { "Unlocked \($0.lastPathComponent)" } + extra + errors
+        say(lines.joined(separator: "\n"), outcome.allDone ? .good : .bad)
         // In demo mode Finder would cover the signature the audience is looking at.
         if !outcome.restored.isEmpty, !demoMode { NSWorkspace.shared.activateFileViewerSelecting(outcome.restored) }
-        if allDone, !stayOnScreen { screen = restingScreen }
+        if outcome.allDone, !stayOnScreen { screen = restingScreen }
     }
 
     /// A signature unlock that opened everything: the unlock screen now only shows the result.
