@@ -10,18 +10,12 @@ private func verdict(accepted: Bool, _ rejection: Rejection? = nil) -> Verdict {
 }
 
 private final class CallRecorder {
-    var calls: [String] = []
+    var calls: [Lockout.Effect] = []
     var saves = true
-    var outcome = UnlockOutcome()
 
     func count(_ effect: Lockout.Effect) -> Bool {
-        calls.append("count:\(effect)")
+        calls.append(effect)
         return saves
-    }
-
-    func open() -> UnlockOutcome {
-        calls.append("open")
-        return outcome
     }
 }
 
@@ -70,88 +64,60 @@ struct AttemptRulesTests {
         #expect(!PairingRule.shouldPair(requested: true, hasProfile: true, restored: 0))
     }
 
-    @Test @MainActor func aSignatureIsCountedBeforeAnyFileIsOpened() async {
+    @Test func aSignatureIsCountedBeforeAnyFileIsOpened() {
         let recorder = CallRecorder()
-        recorder.outcome.restored = [URL(fileURLWithPath: "/tmp/restored.txt")]
-        let step = await UnlockAttempt.signature(verdict(accepted: true), count: recorder.count, openFiles: recorder.open)
-        #expect(recorder.calls == ["count:success", "open"])
-        guard case .opened(let outcome) = step else {
-            Issue.record("a saved accepted signature must open its files")
-            return
-        }
-        #expect(outcome.restored == recorder.outcome.restored)
+        let decision = UnlockAttempt.signature(verdict(accepted: true), count: recorder.count)
+        #expect(decision == .openFiles)
+        #expect(recorder.calls == [.success])
     }
 
-    @Test @MainActor func aRejectedSignatureOpensNothing() async {
+    @Test func aRejectedSignatureOpensNothing() {
         let saved = CallRecorder()
-        let savedStep = await UnlockAttempt.signature(verdict(accepted: false, .scoreTooHigh), count: saved.count, openFiles: saved.open)
-        #expect(saved.calls == ["count:failure"])
-        guard case .rejected = savedStep else {
-            Issue.record("a rejected signature must report its rejection after saving the count")
-            return
-        }
+        let savedDecision = UnlockAttempt.signature(verdict(accepted: false, .scoreTooHigh), count: saved.count)
+        #expect(savedDecision == .rejected)
+        #expect(saved.calls == [.failure])
 
         let unsaved = CallRecorder()
         unsaved.saves = false
-        let unsavedStep = await UnlockAttempt.signature(verdict(accepted: false, .scoreTooHigh), count: unsaved.count, openFiles: unsaved.open)
-        #expect(unsaved.calls == ["count:failure"])
-        guard case .countNotSaved = unsavedStep else {
-            Issue.record("a failed save must take precedence over reporting the rejection")
-            return
-        }
+        let unsavedDecision = UnlockAttempt.signature(verdict(accepted: false, .scoreTooHigh), count: unsaved.count)
+        #expect(unsavedDecision == .countNotSaved)
+        #expect(unsaved.calls == [.failure])
     }
 
-    @Test @MainActor func anAcceptedSignatureWhoseCountCannotBeSavedOpensNothing() async {
+    @Test func anAcceptedSignatureWhoseCountCannotBeSavedOpensNothing() {
         let recorder = CallRecorder()
         recorder.saves = false
-        let step = await UnlockAttempt.signature(verdict(accepted: true), count: recorder.count, openFiles: recorder.open)
-        #expect(recorder.calls == ["count:success"])
-        guard case .countNotSaved = step else {
-            Issue.record("an accepted signature must wait for a saved count before opening files")
-            return
-        }
+        let decision = UnlockAttempt.signature(verdict(accepted: true), count: recorder.count)
+        #expect(decision == .countNotSaved)
+        #expect(recorder.calls == [.success])
     }
 
-    @Test @MainActor func aSignatureFromAnUnknownDeviceIsNotCountedAndOpensNothing() async {
+    @Test func aSignatureFromAnUnknownDeviceIsNotCountedAndOpensNothing() {
         let recorder = CallRecorder()
-        let step = await UnlockAttempt.signature(verdict(accepted: false, .deviceUnknown), count: recorder.count, openFiles: recorder.open)
-        #expect(recorder.calls.isEmpty)
-        guard case .notCounted = step else {
-            Issue.record("an unknown device must leave the count and files alone")
-            return
-        }
+        let decision = UnlockAttempt.signature(verdict(accepted: false, .deviceUnknown), count: recorder.count)
+        #expect(decision == .notCounted)
+        #expect(recorder.calls == [])
     }
 
-    @Test @MainActor func aRecoveryCodeIsCountedAfterItsFilesFromWhatItOpened() async {
+    @Test func aRecoveryCodeIsCountedAfterItsFilesFromWhatItOpened() {
         let first = URL(fileURLWithPath: "/tmp/first.txt")
         let second = URL(fileURLWithPath: "/tmp/second.txt")
-        let cases: [(restored: [URL], wrongKey: [URL], effect: String)] = [
-            ([first], [second], "failure"),
-            ([first, second], [], "success"),
-            ([], [], "none"),
+        let cases: [(restored: [URL], wrongKey: [URL], effect: Lockout.Effect)] = [
+            ([first], [second], .failure),
+            ([first, second], [], .success),
+            ([], [], .none),
         ]
         for item in cases {
             for saves in [true, false] {
                 let recorder = CallRecorder()
                 recorder.saves = saves
-                recorder.outcome.restored = item.restored
-                recorder.outcome.wrongKey = item.wrongKey
-                recorder.outcome.failures = [.init(url: first, error: LockedFileError.notAirSignFile)]
-                let step = await UnlockAttempt.recoveryCode(openFiles: recorder.open, count: recorder.count)
-                #expect(recorder.calls == ["open", "count:\(item.effect)"])
-                let outcome: UnlockOutcome
-                switch step {
-                case .counted(let opened):
-                    #expect(saves)
-                    outcome = opened
-                case .countNotSaved(let opened):
-                    #expect(!saves)
-                    outcome = opened
-                }
-                #expect(outcome.restored == item.restored)
-                #expect(outcome.wrongKey == item.wrongKey)
-                #expect(outcome.failures.map(\.url) == [first])
-                #expect(outcome.failures.first?.error as? LockedFileError == .notAirSignFile)
+                var outcome = UnlockOutcome()
+                outcome.restored = item.restored
+                outcome.wrongKey = item.wrongKey
+                outcome.failures = [.init(url: first, error: LockedFileError.notAirSignFile)]
+                let decision = UnlockAttempt.recoveryCode(outcome, count: recorder.count)
+                #expect(decision == (saves ? .counted : .countNotSaved))
+                #expect(recorder.calls == [item.effect])
             }
         }
     }

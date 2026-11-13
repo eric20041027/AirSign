@@ -1,30 +1,26 @@
 public enum UnlockAttempt {
-    public enum SignatureStep {
-        case notCounted, rejected, countNotSaved, opened(UnlockOutcome)
+    public enum SignatureDecision: Equatable {
+        case notCounted, rejected, countNotSaved, openFiles
     }
 
-    /// Counts the try first. Files are opened only when the signature was accepted and the count was saved.
-    @MainActor
-    public static func signature(_ verdict: Verdict, count: (Lockout.Effect) -> Bool,
-                                 openFiles: () async throws -> UnlockOutcome) async rethrows -> SignatureStep {
+    /// Counts the try. The answer is `.openFiles` only when the signature was accepted and the count was saved,
+    /// so no file can be opened before the try has been counted.
+    public static func signature(_ verdict: Verdict, count: (Lockout.Effect) -> Bool) -> SignatureDecision {
+        guard verdict.rejection != .deviceUnknown else { return .notCounted }
         let effect = AttemptResult.signature(verdict).lockoutEffect
-        guard effect != .none else { return .notCounted }
         guard count(effect) else { return .countNotSaved }
         guard verdict.accepted else { return .rejected }
-        return .opened(try await openFiles())
+        return .openFiles
     }
 
-    public enum RecoveryStep {
-        case counted(UnlockOutcome), countNotSaved(UnlockOutcome)
+    public enum RecoveryDecision: Equatable {
+        case counted, countNotSaved
     }
 
-    /// Opens first, then counts from what the code opened.
-    @MainActor
-    public static func recoveryCode(openFiles: () async -> UnlockOutcome,
-                                    count: (Lockout.Effect) -> Bool) async -> RecoveryStep {
-        let outcome = await openFiles()
+    /// A recovery-code try is counted after its file work, from what the code opened.
+    public static func recoveryCode(_ outcome: UnlockOutcome, count: (Lockout.Effect) -> Bool) -> RecoveryDecision {
         let effect = AttemptResult.recoveryUnlock(restored: outcome.restored.count, wrongKey: outcome.wrongKey.count).lockoutEffect
-        guard count(effect) else { return .countNotSaved(outcome) }
-        return .counted(outcome)
+        guard count(effect) else { return .countNotSaved }
+        return .counted
     }
 }

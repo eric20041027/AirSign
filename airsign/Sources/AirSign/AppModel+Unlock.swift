@@ -13,35 +13,38 @@ extension AppModel {
         }
         let verdict = verify(signature, deviceUID: AudioDeviceIdentity.headphoneUID(), against: current.enrollment,
                              threshold: thresholdOverride)
-        lastVerdict = verdict.rejection == .deviceUnknown ? nil : verdict
-        if verdict.rejection != .deviceUnknown {
-            sampleCandidate = verdict.canBecomeSample ? signature : nil
+        if verdict.rejection == .deviceUnknown {
+            lastVerdict = nil
+            say(Self.describe(verdict), .warn)
+            return
         }
-        let urls = pendingUnlock
-        beginFileWork("Unlocking", count: urls.count)
-        Task { await unlockWithSignature(verdict, urls: urls, demoMode: current.demoMode) }
-    }
-
-    private func unlockWithSignature(_ verdict: Verdict, urls: [URL], demoMode: Bool) async {
-        defer { endFileWork() }
+        lastVerdict = verdict
+        sampleCandidate = verdict.canBecomeSample ? signature : nil
+        switch UnlockAttempt.signature(verdict, count: adjustLockout) {
+        case .notCounted, .countNotSaved:
+            return
+        case .rejected:
+            say(current.demoMode ? Self.describe(verdict) : "Not recognized.", .bad)
+            return
+        case .openFiles:
+            break
+        }
         do {
-            let step = try await UnlockAttempt.signature(verdict, count: adjustLockout) {
-                let master = try store.masterKey()
-                let paired = try store.pairedRecoveryKeys()
-                let keys = UnlockKeys(master: master, paired: paired)
+            let master = try store.masterKey()
+            let paired = try store.pairedRecoveryKeys()
+            let keys = UnlockKeys(master: master, paired: paired)
+            let urls = pendingUnlock
+            guard !urls.isEmpty else {
+                let outcome = UnlockRun.run([], locker: FileLocker(), open: keys.open)
+                reportSignatureUnlock(outcome, verdict: verdict, demoMode: current.demoMode)
+                return
+            }
+            beginFileWork("Unlocking", count: urls.count)
+            Task {
+                defer { endFileWork() }
                 let outcome = await fileWorker.unlock(urls, keys: keys)
                 pendingUnlock = outcome.wrongKey
-                return outcome
-            }
-            switch step {
-            case .notCounted:
-                say(Self.describe(verdict), .warn)
-            case .rejected:
-                say(demoMode ? Self.describe(verdict) : "Not recognized.", .bad)
-            case .countNotSaved:
-                return
-            case .opened(let outcome):
-                reportSignatureUnlock(outcome, verdict: verdict, demoMode: demoMode)
+                reportSignatureUnlock(outcome, verdict: verdict, demoMode: current.demoMode)
             }
         } catch ProfileStoreError.keyMissing {
             block(.keyMissing)
@@ -99,12 +102,9 @@ extension AppModel {
 
     private func unlockWithRecoveryCode(_ code: String, urls: [URL], rememberOnThisMac: Bool) async {
         defer { endFileWork() }
-        let step = await UnlockAttempt.recoveryCode(openFiles: {
-            let outcome = await fileWorker.unlock(urls, recoveryCode: code)
-            pendingUnlock = outcome.wrongKey
-            return outcome
-        }, count: adjustLockout)
-        guard case .counted(let outcome) = step else { return }
+        let outcome = await fileWorker.unlock(urls, recoveryCode: code)
+        pendingUnlock = outcome.wrongKey
+        guard UnlockAttempt.recoveryCode(outcome, count: adjustLockout) == .counted else { return }
         var extra = outcome.wrongKey.map { "\($0.lastPathComponent): wrong recovery code." }
         if PairingRule.shouldPair(requested: rememberOnThisMac, hasProfile: profile != nil, restored: outcome.restored.count) {
             extra.append(pairThisMac(withCode: code))
