@@ -65,6 +65,7 @@ An item-not-found error is fine when the sandbox never created that item. `AIRSI
 ## Rules for changes
 
 - Write the test first for any change to `AirSignCore`, and keep `scripts/check.sh` passing.
+- Don't skip or cancel a test to get a green run. The script allows the two known skips and fails on any other test that did not pass. It cannot see a cancelled case inside a parameterized test, so don't use `Test.cancel`.
 - One topic per pull request. Use conventional commit prefixes: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`.
 - Update the README when behaviour that users see changes.
 - Never commit signature recordings, test-lab logs, `profile.bin` or recovery codes. They are personal data or secrets.
