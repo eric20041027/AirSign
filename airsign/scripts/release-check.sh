@@ -29,22 +29,25 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
 
 if [[ -n "$MODE" ]]; then
   [[ ! -L "$NOTES_FILE" && ( ! -e "$NOTES_FILE" || -f "$NOTES_FILE" ) ]] ||
-    fail usage "Choose a regular notes file, not a directory or symbolic link."
-  NOTES_DIR="$(cd "$(dirname "$NOTES_FILE")" 2>/dev/null && pwd -P)" ||
-    fail usage "Create the notes file's parent folder first."
+    fail notes "Choose a regular notes file, not a directory or symbolic link."
+  NOTES_DIR="$(cd -- "$(dirname "$NOTES_FILE")" 2>/dev/null && pwd -P)" ||
+    fail notes "Create the notes file's parent folder first."
   NOTES_PATH="$NOTES_DIR/$(basename "$NOTES_FILE")"
-  case "$NOTES_PATH" in
-    "$REPO_ROOT/.git"|"$REPO_ROOT/.git/"*) fail usage "Write notes outside Git's own files." ;;
-  esac
-  case "$NOTES_PATH" in
-    "$REPO_ROOT/"*)
-      if git -C "$REPO_ROOT" ls-files --error-unmatch -- "$NOTES_PATH" >/dev/null 2>&1; then
-        fail usage "Choose an untracked notes file so no tracked file is changed."
-      else
-        [[ "$?" == 1 ]] || fail usage "Cannot check whether the notes file is tracked."
-      fi
-      ;;
-  esac
+  GIT_TOPLEVEL="$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2>/dev/null)" ||
+    fail notes "Cannot find the repository folder."
+  GIT_DIR="$(git -C "$REPO_ROOT" rev-parse --absolute-git-dir 2>/dev/null)" ||
+    fail notes "Cannot find the Git directory."
+  GIT_COMMON_DIR="$(git -C "$REPO_ROOT" rev-parse --git-common-dir 2>/dev/null)" ||
+    fail notes "Cannot find the common Git directory."
+  for PROTECTED_DIR in "$GIT_TOPLEVEL" "$GIT_DIR" "$GIT_COMMON_DIR"; do
+    PROTECTED_DIR="$(cd "$REPO_ROOT" && cd -- "$PROTECTED_DIR" 2>/dev/null && pwd -P)" ||
+      fail notes "Cannot resolve the repository or its Git folders."
+    case "$NOTES_PATH" in
+      "$PROTECTED_DIR"|"$PROTECTED_DIR/"*)
+        fail notes "Write notes outside the repository and its Git folders."
+        ;;
+    esac
+  done
 fi
 
 PLIST_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
@@ -82,13 +85,47 @@ CHANGELOG_BODY="$(awk -v version="$VERSION" '
 ' "$REPO_ROOT/CHANGELOG.md" 2>/dev/null)" ||
   fail changelog "Use exactly one ## [$VERSION] - YYYY-MM-DD heading and leave ## [Unreleased] empty."
 
+read_repository() {
+  local read_failure="$1" parse_failure="$2" origin_url
+  origin_url="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null)" ||
+    fail "$read_failure" "Cannot read origin's URL; check git remote -v, then try again."
+  REPOSITORY="${origin_url%/}"
+  REPOSITORY="${REPOSITORY%.git}"
+  case "$REPOSITORY" in
+    https://*|http://*|ssh://*|git://*)
+      REPOSITORY="${REPOSITORY#*://}"
+      REPOSITORY="${REPOSITORY#*/}"
+      ;;
+    *@*:*) REPOSITORY="${REPOSITORY#*:}" ;;
+    *) fail "$parse_failure" "Cannot find owner/name in origin's URL; use a GitHub HTTPS or SSH URL." ;;
+  esac
+  [[ "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] ||
+    fail "$parse_failure" "Cannot find owner/name in origin's URL; use a GitHub HTTPS or SSH URL."
+}
+
 write_notes() {
   local temporary
   temporary="$(mktemp "$NOTES_PATH.XXXXXX" 2>/dev/null)" ||
     fail usage "Choose a writable notes file."
   # Replace the destination, so a hard link cannot change a tracked file.
   if ! {
-    printf '%s\n\n' "$CHANGELOG_BODY" &&
+    printf '%s\n\n' "$CHANGELOG_BODY" | awk -v base="https://github.com/$REPOSITORY/blob/v$VERSION/" '
+      {
+        line = $0
+        output = ""
+        if (match(line, /^[[:space:]]*\[[^]]+\]:[[:space:]]*<?/)) {
+          output = substr(line, 1, RLENGTH)
+          line = substr(line, RLENGTH + 1)
+          if (line !~ /^(https?:\/\/|#|mailto:)/) output = output base
+        }
+        while (match(line, /\]\([[:space:]]*<?/)) {
+          output = output substr(line, 1, RSTART + RLENGTH - 1)
+          line = substr(line, RSTART + RLENGTH)
+          if (line !~ /^(https?:\/\/|#|mailto:)/) output = output base
+        }
+        print output line
+      }
+    ' &&
     cat <<EOF
 ## Install
 
@@ -118,12 +155,13 @@ EOF
 }
 
 if [[ "$MODE" == --preview-notes ]]; then
+  read_repository notes notes
   write_notes
   printf 'Notes written to %s. This was a preview: the release was not checked.\n' "$NOTES_FILE"
   exit 0
 fi
 
-WORKING_TREE="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null)" ||
+WORKING_TREE="$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all 2>/dev/null)" ||
   fail "working tree" "Cannot read git status; run this script from a Git checkout."
 [[ -z "$WORKING_TREE" ]] || fail "working tree" "Commit or remove all changes before checking a release."
 
@@ -132,8 +170,6 @@ BRANCH="$(git -C "$REPO_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null)" ||
 [[ "$BRANCH" == main ]] || fail branch "Check out main before checking a release."
 COMMIT="$(git -C "$REPO_ROOT" rev-parse --verify HEAD 2>/dev/null)" ||
   fail branch "Cannot read the commit on main."
-SHORT_COMMIT="$(git -C "$REPO_ROOT" rev-parse --short "$COMMIT" 2>/dev/null)" ||
-  fail branch "Cannot read the short commit on main."
 REMOTE_MAIN="$(git -C "$REPO_ROOT" ls-remote origin refs/heads/main 2>/dev/null)" ||
   fail network "Cannot read origin's main; check your connection and origin URL, then try again."
 [[ "$REMOTE_MAIN" == "$COMMIT"$'\trefs/heads/main' ]] ||
@@ -149,32 +185,31 @@ REMOTE_TAG="$(git -C "$REPO_ROOT" ls-remote origin "refs/tags/v$VERSION" 2>/dev/
 [[ -z "$REMOTE_TAG" ]] || fail tag "The tag v$VERSION already exists on origin; choose an unused version."
 
 command -v gh >/dev/null 2>&1 || fail gh "Install the GitHub CLI (gh), sign in with gh auth login, then try again."
-ORIGIN_URL="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null)" ||
-  fail network "Cannot read origin's URL; check git remote -v, then try again."
-REPOSITORY="${ORIGIN_URL%/}"
-REPOSITORY="${REPOSITORY%.git}"
-case "$REPOSITORY" in
-  https://*|http://*|ssh://*|git://*)
-    REPOSITORY="${REPOSITORY#*://}"
-    REPOSITORY="${REPOSITORY#*/}"
-    ;;
-  *@*:*) REPOSITORY="${REPOSITORY#*:}" ;;
-  *) fail ci "Cannot find owner/name in origin's URL; use a GitHub HTTPS or SSH URL." ;;
-esac
-[[ "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] ||
-  fail ci "Cannot find owner/name in origin's URL; use a GitHub HTTPS or SSH URL."
-CHECK_RUNS="$(gh api "repos/$REPOSITORY/commits/$COMMIT/check-runs" --paginate \
-  --jq '.check_runs[] | select(.name == "check") | [.id, .status, .conclusion] | @tsv' 2>/dev/null)" ||
+read_repository network ci
+# Select the newest run across all pages, including reruns.
+CHECK_RUNS="$(gh api "repos/$REPOSITORY/commits/$COMMIT/check-runs" --paginate --slurp \
+  --jq '[.[].check_runs[] | select(.name == "check")] | max_by(.id) | if . == null then empty else "\(.status) \(.conclusion)" end' \
+  2>/dev/null && printf '\001')" ||
   fail network "Cannot read GitHub checks; run gh auth status, check your connection, then try again."
-# A rerun must succeed too; an older successful run cannot approve a newer failure.
-awk '
-  $1 ~ /^[0-9]+$/ && $1 + 0 > latest { latest = $1; status = $2; conclusion = $3 }
-  END { exit !(latest && status == "completed" && conclusion == "success") }
-' <<< "$CHECK_RUNS" || fail ci "The latest check run named check must be completed with conclusion success on $COMMIT."
+# Preserve extra trailing lines; remove only the marker and one line ending.
+CHECK_RUNS="${CHECK_RUNS%$'\001'}"
+CHECK_RUNS="${CHECK_RUNS%$'\n'}"
+[[ "$CHECK_RUNS" == 'completed success' ]] ||
+  fail ci "The latest check run named check must return completed success on $COMMIT. Reply:
+${CHECK_RUNS:-<empty>}"
 
 "$SCRIPT_DIR/check.sh" --with-test-volume 2>&1 ||
   fail checks "airsign/scripts/check.sh --with-test-volume did not pass; fix its reported failure and try again."
+WORKING_TREE="$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all 2>/dev/null)" ||
+  fail "working tree" "Cannot read git status after the local check."
+[[ -z "$WORKING_TREE" ]] || fail "working tree" "The working tree changed during the check; run it again from a clean tree."
+BRANCH="$(git -C "$REPO_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null)" ||
+  fail branch "Check out main before checking a release."
+[[ "$BRANCH" == main ]] || fail branch "The branch changed during the check; check out main and run it again."
+CURRENT_COMMIT="$(git -C "$REPO_ROOT" rev-parse --verify HEAD 2>/dev/null)" ||
+  fail branch "Cannot read the commit after the local check."
+[[ "$CURRENT_COMMIT" == "$COMMIT" ]] || fail branch "main moved during the check; run it again."
 if [[ "$MODE" == --notes ]]; then
   write_notes
 fi
-printf 'Ready to release %s from %s.\n' "$VERSION" "$SHORT_COMMIT"
+printf 'Ready to release %s from %s.\n' "$VERSION" "$COMMIT"

@@ -11,22 +11,22 @@ AirSign's first release locks a file or folder on a Mac with a signature drawn i
 ### Security
 
 - A restored file or folder appears whole or not at all, except on drives that cannot rename without replacing, such as exFAT or FAT: a single file is written straight to its final name. A force-quit during that copy can leave an incomplete file there; the locked file stays and nothing is overwritten.
-- AirSign cleans up leftovers from an interrupted restore before the next unlock in that folder.
+- At the next unlock in a folder, AirSign removes its own hidden `.airsign-partial-…` folders left there by an interrupted restore, if nothing is using them.
 - An unreadable profile or key shows a blocking screen instead of asking you to enroll again, so the master key is kept.
-- Reset replaces nothing until the new enrollment is saved.
+- Reset replaces nothing until you confirm the new recovery code. Cancelling or quitting before then keeps everything.
 - Changing the clock no longer ends a cooldown while the Mac has not restarted.
 - The test lab, AirPods probe and Keychain self-test are only in lab builds.
 - The security model now explains pairing a second Mac.
 
 ### Fixed
 
-- Saving the profile can no longer half-succeed.
+- The profile file is replaced in one step. The new file has its final permissions before it takes the old one's place.
 - A lockout saved by an older build cannot last longer than 4 hours.
 - **Forget paired Macs** works even when the pairing keys cannot be read.
 
 ### Changed
 
-- Locking and unlocking run in the background, one operation at a time, with a progress line.
+- Locking and unlocking run in the background, one operation at a time, with a progress line. Other actions are unavailable until the operation ends.
 - Items opened while files are being processed wait their turn.
 
 ### Upgrading from a build made before 13 November 2026
