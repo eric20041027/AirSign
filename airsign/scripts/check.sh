@@ -236,6 +236,13 @@ IFS=' ' read -r -a SWIFT_ARGS <<< "${AIRSIGN_SWIFT_ARGS:-}"
 # Covers Package.swift without the deprecation warning emitted by -Xmanifest.
 DEBUG_ARGS=(--enable-code-coverage -Xswiftc -warnings-as-errors -Xbuild-tools-swiftc -warnings-as-errors)
 
+# The result file cannot distinguish a cancelled test (or parameterized case) from a pass.
+if grep -R -l -a -z -E '(^|[^[:alnum:]_])Test[[:space:]]*\.[[:space:]]*cancel([^[:alnum:]_]|$)' Tests; then
+  fail "skipped tests"
+else
+  [[ "$?" == 1 ]] || fail "skipped tests"
+fi
+
 echo "==> 1/6 build"
 without_warnings "$WORK_DIR/debug-build.log" \
   swift build --build-tests "${DEBUG_ARGS[@]}" ${SWIFT_ARGS[@]+"${SWIFT_ARGS[@]}"} || fail build
@@ -257,58 +264,47 @@ else
   unset AIRSIGN_TEST_VOLUME
 fi
 TEST_LOG="$WORK_DIR/tests.log"
+TEST_RESULTS="$WORK_DIR/tests-swift-testing.xml"
 # The debug build already compiled the tests, with the same coverage and warning flags.
-swift test --skip-build "${DEBUG_ARGS[@]}" ${SWIFT_ARGS[@]+"${SWIFT_ARGS[@]}"} 2>&1 | tee "$TEST_LOG" || fail tests
-TEST_COUNT="$(awk '
-  /^[^[:alnum:]]*Test run with [0-9]+ tests? in [0-9]+ suites? passed after [0-9]+(\.[0-9]+)? seconds\.$/ {
-    runs++
-    count = $0
-    sub(/^[^[:alnum:]]*Test run with /, "", count)
-    sub(/ tests? in .*$/, "", count)
-  }
-  END { if (runs != 1 || count == "") exit 1; print count }
-' "$TEST_LOG")" || fail tests
-SKIPPED_TESTS="$(awk -v expected="$TEST_COUNT" '
-  # XCTest reports its empty run before Swift Testing.
-  /^Test Suite .* (started|passed|failed) at / { next }
-  /^[^[:alnum:]]*(Test|Suite) / {
-    outcome = $0
-    sub(/^[^[:alnum:]]*/, "", outcome)
-    if (outcome ~ /^Test run / || outcome ~ / started\.$/) next
-    if (outcome ~ /^(Test|Suite) .+ passed after [0-9]+(\.[0-9]+)? seconds\.$/) {
-      # A parameterized function has one result, with its case count before "passed".
-      if (outcome ~ /^Test / && outcome !~ /^Test case /) passed++
-      else if (outcome ~ /^Test case /) invalid = 1
-      next
-    }
-    if (outcome ~ /^Test .+ skipped([[:space:][:punct:]]|$)/) {
-      name = outcome
-      sub(/ skipped([[:space:][:punct:]].*)?$/, "", name)
-      sub(/^Test /, "", name)
-      sub(/\(\)$/, "", name)
-      if (name == "" || ++seen[name] > 1) invalid = 1
-      skipped++
-      print name
-      next
-    }
-    # Cancelled tests and any unfamiliar outcome fail closed, including suite skips.
-    invalid = 1
-  }
-  END { if (invalid || passed + skipped != expected) exit 1 }
-' "$TEST_LOG")" || fail "skipped tests"
+swift test --skip-build --xunit-output "$WORK_DIR/tests.xml" \
+  "${DEBUG_ARGS[@]}" ${SWIFT_ARGS[@]+"${SWIFT_ARGS[@]}"} 2>&1 | tee "$TEST_LOG" || fail tests
+[[ -f "$TEST_RESULTS" ]] || fail tests
+# Accept only the known suite and test-case layout, with optional skip reason text.
+RESULTS_VALID="$(xmllint --nonet --xpath '
+  count(/testsuites/*) = 1
+  and count(/testsuites/testsuite[@name = "TestResults"][@errors = "0"][@failures = "0"]) = 1
+  and not(/testsuites/testsuite/*[not(self::testcase)])
+  and not(/testsuites/testsuite/testcase[
+    not(@classname) or not(@name) or @name = ""
+    or *[not(self::skipped)] or count(skipped) > 1 or skipped[*]
+  ])
+  and not(//text()[normalize-space() and not(parent::skipped)])
+' "$TEST_RESULTS")" || fail tests
+[[ "$RESULTS_VALID" == true ]] || fail tests
+TEST_COUNT="$(xmllint --nonet --xpath 'count(/testsuites/testsuite/testcase)' "$TEST_RESULTS")" || fail tests
+SKIPPED_COUNT="$(xmllint --nonet --xpath 'count(/testsuites/testsuite/testcase[skipped])' "$TEST_RESULTS")" || fail tests
+SKIPPED_TESTS=
+for ((i = 1; i <= SKIPPED_COUNT; i++)); do
+  name="$(xmllint --nonet --xpath "string(/testsuites/testsuite/testcase[skipped][$i]/@name)" "$TEST_RESULTS")" || fail tests
+  SKIPPED_TESTS+="${SKIPPED_TESTS:+$'\n'}${name%()}"
+done
 SKIPPED_SUMMARY="${SKIPPED_TESTS//$'\n'/, }"
 echo "tests: $TEST_COUNT run, skipped: ${SKIPPED_SUMMARY:-none}"
 
 echo "==> 3/6 test count"
 README_COUNT="$(grep -Eo '[0-9]+ unit tests' "$REPO_ROOT/README.md" | sed 's/ unit tests$//')" || fail "test count"
 [[ "$README_COUNT" =~ ^[0-9]+$ && "$TEST_COUNT" == "$README_COUNT" ]] || fail "test count"
+REPLAY_SKIPPED=0
+VOLUME_SKIPPED=0
 while IFS= read -r name; do
   case "$name" in
     "") ;;
     roundTwoOwnerVersusImitatorAUC)
-      [[ ! -e "$REPO_ROOT/spikes/airpods-motion/sessions" ]] || fail "skipped tests" ;;
+      [[ "$REPLAY_SKIPPED" == 0 && ! -e "$REPO_ROOT/spikes/airpods-motion/sessions" ]] || fail "skipped tests"
+      REPLAY_SKIPPED=1 ;;
     lockAndUnlockWorkOnAVolumeWithoutExclusiveRename)
-      [[ "$WITH_TEST_VOLUME" == 0 ]] || fail "skipped tests" ;;
+      [[ "$VOLUME_SKIPPED" == 0 && "$WITH_TEST_VOLUME" == 0 ]] || fail "skipped tests"
+      VOLUME_SKIPPED=1 ;;
     *) fail "skipped tests" ;;
   esac
 done <<< "$SKIPPED_TESTS"
