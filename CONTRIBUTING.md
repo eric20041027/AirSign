@@ -62,6 +62,8 @@ An item-not-found error is fine when the sandbox never created that item. `AIRSI
 | `tools/tuning` | Python port of the matcher for research. Tests: `cd tools/tuning && python3 -m unittest` (needs numpy) |
 | `archive/makeuc-2026` | Hackathon records; not maintained |
 
+Maintainers cut releases as described in [docs/RELEASING.md](docs/RELEASING.md).
+
 ## Rules for changes
 
 - Write the test first for any change to `AirSignCore`, and keep `scripts/check.sh` passing.
