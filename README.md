@@ -12,6 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/eric20041027/AirSign/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/eric20041027/AirSign/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/eric20041027/AirSign/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/eric20041027/AirSign?color=1a5cff"></a>
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111214?logo=apple&logoColor=white">
   <img alt="Swift" src="https://img.shields.io/badge/Swift-SwiftUI-1a5cff?logo=swift&logoColor=white">
   <img alt="No network code" src="https://img.shields.io/badge/network-none-111214">
@@ -119,12 +120,16 @@ We built a logged test lab into the app and ran it on two Macs during the event:
 
 Requirements: a Mac with Apple silicon and macOS 14 or later; AirPods with head tracking (tested with AirPods Pro 3 and AirPods 4); Xcode 16 or later with an Apple Development certificate (Xcode → Settings → Accounts → Manage Certificates → + → Apple Development).
 
+There is no prebuilt app because a download that opens with a double-click needs an Apple Developer ID certificate and notarization, which this project does not have; AirSign is built from source and signed on your own Mac.
+
 ```bash
-git clone https://github.com/eric20041027/AirSign.git
+git clone --branch v0.1.0 --depth 1 https://github.com/eric20041027/AirSign.git
 cd AirSign/airsign
 swift test               # the core: matcher, crypto, file locking, lockout
 scripts/install.sh       # builds, signs, installs to ~/Applications, registers the Finder items
 ```
+
+For the newest code from `main`, clone without `--branch v0.1.0`.
 
 No Apple Development certificate? Run `AIRSIGN_ADHOC=1 scripts/install.sh` instead; macOS may then ask for your password after each rebuild.
 

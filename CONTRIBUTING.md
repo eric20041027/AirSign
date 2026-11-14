@@ -62,12 +62,15 @@ An item-not-found error is fine when the sandbox never created that item. `AIRSI
 | `tools/tuning` | Python port of the matcher for research. Tests: `cd tools/tuning && python3 -m unittest` (needs numpy) |
 | `archive/makeuc-2026` | Hackathon records; not maintained |
 
+Maintainers cut releases as described in [docs/RELEASING.md](docs/RELEASING.md).
+
 ## Rules for changes
 
 - Write the test first for any change to `AirSignCore`, and keep `scripts/check.sh` passing.
 - Don't skip or cancel a test to get a green run. The script allows the two known skips and fails on any other test that did not pass. The script refuses `Test.cancel` anywhere in the tests, including inside a parameterized test.
 - One topic per pull request. Use conventional commit prefixes: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`.
 - Update the README when behaviour that users see changes.
+- Add a line under Unreleased in `CHANGELOG.md` when a user would notice the change.
 - Never commit signature recordings, test-lab logs, `profile.bin` or recovery codes. They are personal data or secrets.
 - Don't change these without a migration, or existing users lose access to their files: the `.airsign` magic `AIRSIGN1`, the HPKE info string `airsign-file-v1`, the HKDF salt in `RecoveryCode.swift`, the Keychain service `com.makeuc.airsign` and the bundle id `com.makeuc.airsign`.
 - Set your git email to your GitHub noreply address if you don't want your email in the history (GitHub → Settings → Emails).
