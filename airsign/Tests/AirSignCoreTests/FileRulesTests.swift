@@ -114,6 +114,56 @@ struct FileRulesTests {
         #expect(outcome.failures.isEmpty)
     }
 
+    @Test func anUnlockRunWithOnlyAWrongKeyItemIsNotAllDone() throws {
+        let f = Fixture(), fm = FileManager.default
+        defer { try? fm.removeItem(at: f.dir) }
+        let source = f.file("a.txt", "alpha")
+        let first = try f.locker.lock(source, masterKey: f.master, recoveryPublicKey: f.pub)
+        let second = try f.locker.lock(f.file("b.txt", "beta"), masterKey: SymmetricKey(size: .bits256), recoveryPublicKey: f.pub)
+        let outcome = UnlockRun.run([first, second], locker: f.locker) { try LockedFile.open($0, masterKey: f.master) }
+
+        #expect(outcome.restored == [source])
+        #expect(try Data(contentsOf: source) == Data("alpha".utf8))
+        #expect(outcome.wrongKey == [second])
+        #expect(outcome.failures.isEmpty)
+        #expect(!outcome.allDone)
+    }
+
+    @Test func anUnlockRunWithOnlyAFailureIsNotAllDone() throws {
+        let f = Fixture(), fm = FileManager.default
+        defer { try? fm.removeItem(at: f.dir) }
+        let source = f.file("a.txt", "alpha")
+        let first = try f.locker.lock(source, masterKey: f.master, recoveryPublicKey: f.pub)
+        let second = f.file("junk.airsign", "junk")
+        let outcome = UnlockRun.run([first, second], locker: f.locker) { try LockedFile.open($0, masterKey: f.master) }
+
+        #expect(outcome.restored == [source])
+        #expect(try Data(contentsOf: source) == Data("alpha".utf8))
+        #expect(outcome.wrongKey.isEmpty)
+        #expect(outcome.failures.map(\.url) == [second])
+        #expect(!outcome.allDone)
+    }
+
+    @Test func aLockRunWithNothingWrongHasNoFailure() throws {
+        let f = Fixture(), fm = FileManager.default
+        defer { try? fm.removeItem(at: f.dir) }
+        let file = f.file("a.txt", "alpha")
+        let folder = f.dir.appendingPathComponent("Docs")
+        try fm.createDirectory(at: folder, withIntermediateDirectories: false)
+        try Data("beta".utf8).write(to: folder.appendingPathComponent("b.txt"))
+        let outcome = LockRun.run([file, folder], locker: f.locker, masterKey: f.master, recoveryPublicKey: f.pub)
+
+        try #require(outcome.items.count == 2)
+        guard case .locked(let first) = outcome.items[0],
+              case .locked(let second) = outcome.items[1] else {
+            Issue.record("Expected two locked items.")
+            return
+        }
+        #expect(first.source == file)
+        #expect(second.source == folder)
+        #expect(!outcome.anyFailed)
+    }
+
     @Test func aFailureEarlyInALockRunDoesNotStopTheItemsAfterIt() throws {
         let f = Fixture(), fm = FileManager.default
         defer { try? fm.removeItem(at: f.dir) }
