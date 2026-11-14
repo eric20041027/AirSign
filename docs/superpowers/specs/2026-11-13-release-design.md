@@ -31,7 +31,7 @@ It adds no feature and ships no downloadable app.
 - `CHANGELOG.md` at the repository root, in the "Keep a Changelog" layout: newest release first, an `Unreleased` section at the top, each release with its date and the headings it needs out of Added, Changed, Fixed, Security.
 - The `0.1.0` entry says, in plain words a user can follow:
   - what AirSign is and does in this release (a short paragraph, not the README again);
-  - what changed since the state reviewed on 9 November 2026 (commit 5ca039a, before the security fixes), grouped, taken from pull requests #16, #17 and #18 and checked against the code: the security fixes (restores are all-or-nothing; an unreadable profile or key never costs the master key; the lockout can't be ended by changing the clock; research and debug features are only in lab builds; pairing is in the security model); saving the profile can't half-succeed; "Forget paired Macs" works when the pairing keys can't be read; file work runs in the background, one operation at a time;
+  - what changed since the state reviewed on 9 November 2026 (commit 5ca039a, before the security fixes), grouped, taken from pull requests #16, #17 and #18 and checked against the code: the security fixes (a restored file or folder appears whole or not at all, with the exception SECURITY.md gives for drives that cannot rename without replacing; an unreadable profile or key never costs the master key; changing the clock no longer ends a cooldown while the Mac has not restarted; research and debug features are only in lab builds; pairing is in the security model); saving the profile can't half-succeed; "Forget paired Macs" works when the pairing keys can't be read; file work runs in the background, one operation at a time;
   - what someone upgrading from an older build must know: the one-time 4-hour cooldown when the Keychain has no lockout item, and how to check;
   - where the known limits are (a link to SECURITY.md; they are not repeated).
 - Every statement in it is true of the code at the tag. It promises nothing SECURITY.md does not.
@@ -57,7 +57,7 @@ It adds no feature and ships no downloadable app.
 **After.**
 
 - `docs/RELEASING.md`: the steps, in order, with the exact commands: choose the version; move the `Unreleased` entries into a dated section; set the version in `Info.plist`; open a pull request; after it merges, run the release check; tag; push the tag; create the GitHub Release from the notes file; then the two things to look at afterwards (the release page, the badge). It says who may publish: a maintainer, on their own decision.
-- `airsign/scripts/release-check.sh <version>` is run before tagging and changes nothing. It fails, saying why, unless all of these hold: the working tree is clean and is `main` at the same commit as `origin/main`; `Info.plist` has that version; `CHANGELOG.md` has a section for that version with a date and no entries left under `Unreleased` that belong to it; the tag `v<version>` does not exist locally or on the remote; CI passed on that commit; `airsign/scripts/check.sh --with-test-volume` passes. With `--notes <file>` it also writes the release notes (goal 3) to that file.
+- `airsign/scripts/release-check.sh <version>` is run before tagging. It changes no tracked file and publishes nothing; what it writes is what `check.sh` writes (build products and a temporary disk image) and, when asked, the notes file. It fails, saying why, unless all of these hold: `Info.plist` has that version; `CHANGELOG.md` has a section for that version with a date, and the `Unreleased` section is empty (everything in it has moved into the release being cut); the working tree is clean and is `main` at the same commit as `origin/main`; the tag `v<version>` does not exist locally or on the remote; CI passed on that commit; `airsign/scripts/check.sh --with-test-volume` passes. With `--notes <file>` it also writes the release notes (goal 3) to that file. It needs the network and the `gh` command, and says so when either is missing.
 - The pull-request check (`check.sh`) does not change. Its six checks stay six.
 
 ## Order of work
@@ -88,7 +88,7 @@ It adds no feature and ships no downloadable app.
 - English for all new text; plain words, short sentences, like the documents already there. Commit prefixes `docs:`, `chore:`, `ci:`; no attribution lines.
 - `airsign/scripts/check.sh` keeps passing. The README still has exactly one place where a number is followed by ` unit tests`.
 - Never read anything under `.local/`. No test, check or script touches the real Keychain items or the real Application Support folder. Nobody launches the built app from a script.
-- The release date in the changelog is the day the release is published; until then the section is dated by the pull request and corrected in the same step if the day differs.
+- The date in the changelog is the day the release pull request is written. It is not corrected if the tag is pushed on a later day: a correction would change the commit that was checked. The tag and the GitHub Release carry their own dates.
 - Pushing a branch and opening a pull request are the builder's; merging follows CI and review as for the other sub-projects; pushing the tag and creating the GitHub Release need the maintainer's OK at that moment.
 
 ## Decisions taken by the maintainer
@@ -107,6 +107,8 @@ It adds no feature and ships no downloadable app.
 | Tag | `v0.1.0`, annotated, unsigned | The usual form; a signed tag needs a published key the project does not have |
 | Changelog layout | Keep a Changelog, with an Unreleased section | Widely known, readable without tooling, and it gives contributors one place to add a line |
 | Release notes | Generated from the changelog section by the release check, plus fixed install text | One source for what changed; no second text to keep true |
+| Date in the changelog | The day the release pull request is written, never corrected afterwards | Correcting it after the merge would change the commit that CI and the release check passed |
+| `Unreleased` at release time | Must be empty | The script can check that; it cannot tell which leftover entries belong to which release |
 | Release workflow in CI | None | Nothing to build; publishing stays a person's step |
 | How the release is checked | A separate `release-check.sh`, read-only | Keeps `check.sh` at its six checks; the things a release needs (clean `main`, matching version, tag free, CI passed) are not things a pull request should fail on |
 | Install text | Clone the tag, shallow | A user gets exactly the released code; `main` stays documented as the second option |
