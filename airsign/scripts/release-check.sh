@@ -187,14 +187,30 @@ REMOTE_TAG="$(git -C "$REPO_ROOT" ls-remote origin "refs/tags/v$VERSION" 2>/dev/
 command -v gh >/dev/null 2>&1 || fail gh "Install the GitHub CLI (gh), sign in with gh auth login, then try again."
 read_repository network ci
 # Select the newest run across all pages, including reruns.
-CHECK_RUNS="$(gh api "repos/$REPOSITORY/commits/$COMMIT/check-runs" --paginate --slurp \
-  --jq '[.[].check_runs[] | select(.name == "check")] | max_by(.id) | if . == null then empty else "\(.status) \(.conclusion)" end' \
-  2>/dev/null && printf '\001')" ||
+CHECK_RUNS="$(gh api "repos/$REPOSITORY/commits/$COMMIT/check-runs" --paginate \
+  --jq '.check_runs[] | select(.name == "check") | "\(.id) \(.status) \(.conclusion)"' && printf '\001')" ||
   fail network "Cannot read GitHub checks; run gh auth status, check your connection, then try again."
 # Preserve extra trailing lines; remove only the marker and one line ending.
 CHECK_RUNS="${CHECK_RUNS%$'\001'}"
 CHECK_RUNS="${CHECK_RUNS%$'\n'}"
-[[ "$CHECK_RUNS" == 'completed success' ]] ||
+LATEST_CHECK="$(printf '%s\n' "$CHECK_RUNS" | LC_ALL=C awk '
+  $0 !~ /^[0-9]+ [a-z0-9_]+ [a-z0-9_]+$/ { invalid = 1; next }
+  {
+    id = $1
+    sub(/^0+/, "", id)
+    # Compare decimal integers without losing precision on large IDs.
+    if (NR == 1 || length(id) > length(latest_id) ||
+        (length(id) == length(latest_id) && ("x" id) > ("x" latest_id))) {
+      latest_id = id
+      latest_result = $2 " " $3
+    }
+  }
+  END {
+    if (invalid) exit 1
+    print latest_result
+  }
+')" &&
+[[ "$LATEST_CHECK" == 'completed success' ]] ||
   fail ci "The latest check run named check must return completed success on $COMMIT. Reply:
 ${CHECK_RUNS:-<empty>}"
 
