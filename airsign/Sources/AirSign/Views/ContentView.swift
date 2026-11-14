@@ -31,11 +31,19 @@ struct ContentView: View {
                     }
                 }
             }
-            if !model.message.isEmpty {
-                Text(model.message)
-                    .foregroundStyle(Self.color(model.tone))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if model.fileWork != nil || !model.message.isEmpty {
+                HStack(alignment: .top) {
+                    if model.fileWork != nil { ProgressView().controlSize(.small) }
+                    VStack(alignment: .leading) {
+                        if let work = model.fileWork { Text(work) }
+                        if !model.message.isEmpty {
+                            Text(model.message)
+                                .foregroundStyle(Self.color(model.tone))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
             }
         }
         .padding(24)
@@ -61,6 +69,7 @@ struct CaptureButton: View {
             .keyboardShortcut(.space, modifiers: [])
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            .disabled(model.isBusy)
     }
 }
 

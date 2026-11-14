@@ -124,6 +124,7 @@ struct TestLabView: View {
                 Button("Leave lab") { model.leaveLab() }
             }
         }
+        .disabled(model.isBusy)
     }
 }
 #endif
