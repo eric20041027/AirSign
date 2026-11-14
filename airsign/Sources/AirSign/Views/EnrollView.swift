@@ -23,10 +23,12 @@ struct EnrollView: View {
             HStack {
                 CaptureButton()
                 Button("Start over") { model.restartEnrollment() }
+                    .disabled(model.isBusy)
                     .disabled(model.enrolledSoFar.isEmpty)
                 Spacer()
                 if model.isReenrolling || model.isResetting {
                     Button("Cancel") { model.cancelToHome() }
+                        .disabled(model.isBusy)
                 }
             }
         }
@@ -69,10 +71,12 @@ struct RecoveryCodeView: View {
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .textBackgroundColor)))
             HStack {
                 Button("I wrote it down") { model.confirmRecoveryCodeWritten() }
+                    .disabled(model.isBusy)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                 if model.isResetting {
                     Button("Cancel") { model.cancelToHome() }
+                        .disabled(model.isBusy)
                 }
             }
         }

@@ -192,7 +192,7 @@ A restart followed by a clock change also ends a cooldown. If AirSign is force-q
 
 ## Under the hood
 
-- **Swift + SwiftUI** app with Finder Services menu items; core logic in a tested `AirSignCore` library; the package has 116 unit tests.
+- **Swift + SwiftUI** app with Finder Services menu items. The tested `AirSignCore` library holds the rules for attempts, enrollment and file work. The app runs file work in the background. The package has 149 unit tests.
 - **CoreMotion** `CMHeadphoneMotionManager` streams the AirPod's attitude, rotation rate, acceleration and gravity (we measured 50 Hz on AirPods Pro 3 and 25 Hz on AirPods 4).
 - **Matcher:** 9 features per sample, banded DTW (25% band), a duration penalty, the minimum distance to the enrolled templates.
 - **CryptoKit** for AES-GCM and HPKE; the **Keychain** for the master key and a copy of the lockout counter.

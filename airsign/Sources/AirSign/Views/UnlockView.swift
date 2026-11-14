@@ -31,10 +31,12 @@ struct UnlockView: View {
                 if model.unlockFinished {
                     if model.sampleCandidate != nil {
                         Button("Add this signature to my enrollment") { model.addSampleFromLastUnlock() }
+                            .disabled(model.isBusy)
                             .help("Signatures drift over time. Adding a strong recent one keeps AirSign recognizing you; the pass mark stays the same.")
                     }
                     Spacer()
                     Button("Done") { model.cancelToHome() }
+                        .disabled(model.isBusy)
                         .buttonStyle(.borderedProminent)
                         .keyboardShortcut(.defaultAction)
                 } else {
@@ -43,8 +45,10 @@ struct UnlockView: View {
                             .disabled(model.profile == nil || model.lockoutRemaining != nil)
                     }
                     Button("Use recovery code…") { showRecovery = true }
+                        .disabled(model.isBusy)
                     Spacer()
                     Button("Cancel") { model.cancelToHome() }
+                        .disabled(model.isBusy)
                 }
             }
         }
@@ -59,6 +63,7 @@ struct UnlockView: View {
 }
 
 private struct RecoveryEntrySheet: View {
+    @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var code = ""
     @State private var remember = false
@@ -87,6 +92,7 @@ private struct RecoveryEntrySheet: View {
             }
         }
         .padding(20)
+        .disabled(model.isBusy)
     }
 
     private func submit() {
