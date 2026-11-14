@@ -6,5 +6,6 @@ What this changes and why.
 
 - [ ] CI passes (or `airsign/scripts/check.sh` passes locally)
 - [ ] README updated if behaviour that users see changed
+- [ ] CHANGELOG.md has a line under Unreleased if a user would notice the change
 - [ ] No signature recordings, test-lab logs, `profile.bin` or recovery codes added
 - [ ] No change to the `.airsign` magic, HPKE info string, HKDF salt, Keychain service or bundle id (or a migration is included)

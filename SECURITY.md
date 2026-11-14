@@ -4,7 +4,7 @@ AirSign protects files, so we take reports seriously.
 
 ## Supported versions
 
-There are no releases yet. Security fixes go to the `main` branch.
+Security fixes go to the latest release and to `main`. Older releases get none.
 
 ## Reporting a vulnerability
 
