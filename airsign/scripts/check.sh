@@ -237,7 +237,7 @@ IFS=' ' read -r -a SWIFT_ARGS <<< "${AIRSIGN_SWIFT_ARGS:-}"
 DEBUG_ARGS=(--enable-code-coverage -Xswiftc -warnings-as-errors -Xbuild-tools-swiftc -warnings-as-errors)
 
 # The result file cannot distinguish a cancelled test (or parameterized case) from a pass.
-if grep -R -n -a -F 'Test.cancel' Tests; then
+if grep -R -l -a -z -E '(^|[^[:alnum:]_])Test[[:space:]]*\.[[:space:]]*cancel([^[:alnum:]_]|$)' Tests; then
   fail "skipped tests"
 else
   [[ "$?" == 1 ]] || fail "skipped tests"
